@@ -803,6 +803,11 @@ class Heartbeat:
                     )
             await asyncio.sleep(1)
 
+    async def grpc_check_connection(self):
+        while True:
+            self.grpcclient.check_connection()
+            await asyncio.sleep(1)
+
     def add_end_of_day_to_queue(
         self, date_string: str, start_block: CCD_BlockInfo, end_block: CCD_BlockInfo
     ):
@@ -999,7 +1004,7 @@ def main():
                 {"host": "207.180.201.8", "port": 20001},
                 {"host": "31.20.212.96", "port": 20002},
             ],
-            async_check_connection=True,
+            async_check_connection=False,
         )
         console.log(f"Connecting on {TESTNET_IP}:{TESTNET_PORT}")
     else:
@@ -1009,7 +1014,7 @@ def main():
                 {"host": "31.20.212.96", "port": 20001},
                 {"host": "207.180.201.8", "port": 20000},
             ],
-            async_check_connection=True,
+            async_check_connection=False,
         )
         console.log(f"Connecting on {MAINNET_IP}:{MAINNET_PORT}")
 
@@ -1026,6 +1031,7 @@ def main():
     loop.create_task(heartbeat.get_finalized_blocks())
     loop.create_task(heartbeat.process_blocks())
     loop.create_task(heartbeat.send_to_mongo())
+    loop.create_task(heartbeat.grpc_check_connection())
 
     loop.run_forever()
 
