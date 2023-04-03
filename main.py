@@ -101,7 +101,6 @@ class Heartbeat:
         bs = io.BytesIO(bytes.fromhex(hex))
         n = int.from_bytes(bs.read(1), byteorder="little")
         value = bs.read()
-        # return cbor2.decoder.loads(value)
         encoding_guess = chardet.detect(value)
         if encoding_guess["encoding"] and encoding_guess["confidence"] > 0.75:
             try:
@@ -1031,7 +1030,7 @@ def main():
     loop.create_task(heartbeat.get_finalized_blocks())
     loop.create_task(heartbeat.process_blocks())
     loop.create_task(heartbeat.send_to_mongo())
-    loop.create_task(heartbeat.grpc_check_connection())
+    # loop.create_task(heartbeat.grpc_check_connection())
 
     loop.run_forever()
 

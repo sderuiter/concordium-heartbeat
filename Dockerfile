@@ -1,4 +1,5 @@
-FROM tiangolo/uvicorn-gunicorn-fastapi:python3.9
+# FROM tiangolo/uvicorn-gunicorn-fastapi:python3.9
+FROM python:3.11-slim-bullseye
 
 WORKDIR /home/code
 RUN cd /home/code
