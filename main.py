@@ -1002,8 +1002,7 @@ def main():
                 # {"host": "localhost", "port": 20000},
                 {"host": "207.180.201.8", "port": 20001},
                 {"host": "31.20.212.96", "port": 20002},
-            ],
-            async_check_connection=False,
+            ]
         )
         console.log(f"Connecting on {TESTNET_IP}:{TESTNET_PORT}")
     else:
@@ -1012,8 +1011,7 @@ def main():
                 # {"host": "localhost", "port": 20000},
                 {"host": "31.20.212.96", "port": 20001},
                 {"host": "207.180.201.8", "port": 20000},
-            ],
-            async_check_connection=False,
+            ]
         )
         console.log(f"Connecting on {MAINNET_IP}:{MAINNET_PORT}")
 
