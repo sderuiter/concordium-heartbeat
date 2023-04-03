@@ -850,7 +850,6 @@ class Heartbeat:
 
         date_range = self.date_range_generator(start_date, end_date)
 
-        queue = []
         for index, date in enumerate(date_range):
             date_string = f"{date:%Y-%m-%d}"
             if index == 0:
