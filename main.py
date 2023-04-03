@@ -911,7 +911,7 @@ class Heartbeat:
                     CCD_BlockInfo(**end_of_day_blocks[-1]),
                 )
 
-        result = self.db[Collections.blocks_per_day].bulk_write(
+        _ = self.db[Collections.blocks_per_day].bulk_write(
             self.queues[Queue.block_per_day]
         )
 
