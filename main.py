@@ -523,11 +523,21 @@ class Heartbeat:
                     )
                 )
 
-                self.add_end_of_day_to_queue(
-                    f"{previous_block_info.slot_time:%Y-%m-%d}",
-                    CCD_BlockInfo(**start_of_day_blocks[0]),
-                    previous_block_info,
-                )
+                if len(start_of_day_blocks) == 0:
+                    start_of_day_blocks = [
+                        self.grpcclient.get_finalized_block_at_height(0)
+                    ]
+                    self.add_end_of_day_to_queue(
+                        f"{previous_block_info.slot_time:%Y-%m-%d}",
+                        start_of_day_blocks[0],
+                        previous_block_info,
+                    )
+                else:
+                    self.add_end_of_day_to_queue(
+                        f"{previous_block_info.slot_time:%Y-%m-%d}",
+                        CCD_BlockInfo(**start_of_day_blocks[0]),
+                        previous_block_info,
+                    )
                 console.log(
                     f"End of day found for {previous_block_info.slot_time:%Y-%m-%d}"
                 )
@@ -711,9 +721,9 @@ class Heartbeat:
                     current_block_to_process: CCD_BlockInfo = (
                         self.finalized_block_infos_to_process.pop(0)
                     )
-                    console.log(
-                        f"Processing {current_block_to_process.height:,.0f} with {current_block_to_process.transaction_count:4,.0f} transaction(s)..."
-                    )
+                    # console.log(
+                    #     f"Processing {current_block_to_process.height:,.0f} with {current_block_to_process.transaction_count:4,.0f} transaction(s)..."
+                    # )
                     try:
                         self.add_block_and_txs_to_queue(current_block_to_process)
 
@@ -800,7 +810,7 @@ class Heartbeat:
                     console.log(
                         f"Blocks retrieved: {self.finalized_block_infos_to_process[0].height:,.0f} - {self.finalized_block_infos_to_process[-1].height:,.0f}"
                     )
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
 
     async def grpc_check_connection(self):
         while True:
@@ -1000,15 +1010,15 @@ def main():
             hosts=[
                 # {"host": "localhost", "port": 20000},
                 {"host": "207.180.201.8", "port": 20001},
-                {"host": "31.20.212.96", "port": 20002},
+                {"host": "31.21.31.76", "port": 20002},
             ]
         )
         console.log(f"Connecting on {TESTNET_IP}:{TESTNET_PORT}")
     else:
         grpcclient = GRPCClient(
             hosts=[
-                # {"host": "localhost", "port": 20000},
-                {"host": "31.20.212.96", "port": 20001},
+                {"host": "localhost", "port": 20000},
+                {"host": "31.21.31.76", "port": 20001},
                 {"host": "207.180.201.8", "port": 20000},
             ]
         )
