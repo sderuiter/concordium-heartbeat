@@ -63,4 +63,4 @@ MAINNET_PORT = os.environ.get("MAINNET_PORT", MAINNET_PORT_LOCAL)
 MAX_BLOCKS_PER_RUN = int(os.environ.get("MAX_BLOCKS_PER_RUN", 1000))
 
 NET = os.environ.get("NET", NET_LOCAL)
-TESTNET = False if NET == "MAINNET" else False
+TESTNET = False if NET == "MAINNET" else True
