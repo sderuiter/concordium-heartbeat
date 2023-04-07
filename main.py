@@ -1087,7 +1087,7 @@ def main():
                 {"host": "207.180.201.8", "port": 20000},
             ]
         )
-        console.log(f"Connecting on {MAINNET_IP}:{MAINNET_PORT}")
+        # console.log(f"Connecting on {MAINNET_IP}:{MAINNET_PORT}")
 
     heartbeat = Heartbeat(grpcclient, tooter, mongodb, TESTNET)
 
