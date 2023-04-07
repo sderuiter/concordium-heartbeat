@@ -6,15 +6,19 @@ from sharingiscaring.GRPCClient.CCD_Types import *
 from sharingiscaring.GRPCClient.types_pb2 import Empty
 from sharingiscaring.tooter import Tooter
 from sharingiscaring.mongodb import MongoDB, Collections
+from sharingiscaring.node import ConcordiumNodeFromDashboard
 import sharingiscaring.GRPCClient.wadze as wadze
 from pymongo.collection import Collection
 from pymongo import ASCENDING, DESCENDING
 from pymongo import ReplaceOne
+import aiohttp
 import json
+import requests
 from typing import Dict
 from env import *
 from datetime import timedelta
 import io
+import time
 from rich.console import Console
 import chardet
 
@@ -556,12 +560,45 @@ class Heartbeat:
             for se in special_events:
                 if se.payday_account_reward or se.payday_pool_reward:
                     found = True
+
+                    # protection for slow payday calculation
+                    # first get the current date that we have stored
+                    # as last known payday.
+                    # Then check if this date has already been picked up
+                    # by the payday calculation by checking if there
+                    # exists a payday with that date.
+                    payday_not_yet_processed = True
+                    while payday_not_yet_processed:
+                        last_known_payday = self.db[Collections.helpers].find_one(
+                            {"_id": "last_known_payday"}
+                        )
+                        # if we haven't started with the first payday
+                        # we can continue.
+                        if not last_known_payday:
+                            payday_not_yet_processed = False
+                            result = True
+                        else:
+                            result = self.db[Collections.paydays].find_one(
+                                {"date": last_known_payday["date"]}
+                            )
+                        if not result:
+                            console.log(
+                                f"Payday {last_known_payday['date']} not yet processed. Sleeping for 10 sec."
+                            )
+                            time.sleep(10)
+                        else:
+                            payday_not_yet_processed = False
+
+                    new_payday_date_string = (
+                        f"{current_block_to_process.slot_time:%Y-%m-%d}"
+                    )
+
                     query = {"_id": "last_known_payday"}
                     self.db[Collections.helpers].replace_one(
                         query,
                         {
                             "_id": "last_known_payday",
-                            "date": f"{current_block_to_process.slot_time:%Y-%m-%d}",
+                            "date": new_payday_date_string,
                             "hash": current_block_to_process.hash,
                             "height": current_block_to_process.height,
                         },
@@ -817,6 +854,28 @@ class Heartbeat:
             self.grpcclient.check_connection()
             await asyncio.sleep(1)
 
+    async def update_nodes_from_dashboard(self):
+        while True:
+            async with aiohttp.ClientSession() as session:
+
+                url = "https://dashboard.mainnet.concordium.software/nodesSummary"
+                async with session.get(url) as resp:
+                    t = await resp.json()
+
+                    queue = []
+
+                    for raw_node in t:
+                        node = ConcordiumNodeFromDashboard(**raw_node)
+                        d = node.dict()
+                        d["_id"] = node.nodeId
+
+                        queue.append(ReplaceOne({"_id": node.nodeId}, d, upsert=True))
+
+                    _ = self.db[Collections.dashboard_nodes].delete_many({})
+                    _ = self.db[Collections.dashboard_nodes].bulk_write(queue)
+
+            await asyncio.sleep(60)
+
     def add_end_of_day_to_queue(
         self, date_string: str, start_block: CCD_BlockInfo, end_block: CCD_BlockInfo
     ):
@@ -969,6 +1028,12 @@ class Heartbeat:
             if collection == Collections.modules:
                 self.create_index(collection, "module_name", ASCENDING)
 
+            if collection == Collections.dashboard_nodes:
+                self.create_index(collection, "consensusBakerId", ASCENDING)
+
+            if collection == Collections.cns_domains:
+                self.create_index(collection, "domain_name", ASCENDING)
+
             if collection == Collections.transactions:
                 self.create_index(collection, "type.type", ASCENDING)
                 self.create_index(collection, "type.contents", ASCENDING)
@@ -1034,9 +1099,11 @@ def main():
 
     loop = asyncio.get_event_loop()
 
+    loop.create_task(heartbeat.update_nodes_from_dashboard())
     loop.create_task(heartbeat.get_finalized_blocks())
     loop.create_task(heartbeat.process_blocks())
     loop.create_task(heartbeat.send_to_mongo())
+
     # loop.create_task(heartbeat.grpc_check_connection())
 
     loop.run_forever()
