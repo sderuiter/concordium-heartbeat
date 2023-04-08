@@ -271,7 +271,6 @@ class Heartbeat:
     def add_back_updated_modules_to_queue(
         self, current_block_to_process: CCD_BlockInfo
     ):
-
         self.queues[Queue.modules] = []
 
         # make this into a set to remove duplicates...remember testnet with 991K module updates in 1K blocks...
@@ -310,7 +309,6 @@ class Heartbeat:
         # console.log (f"Generating indices for {len(transactions):,.0f} transactions...")
 
         for tx in transactions:
-
             result = self.classify_transaction(tx)
 
             dct_transfer_and_all = self.index_transfer_and_all(tx, result, block_info)
@@ -500,7 +498,6 @@ class Heartbeat:
         if (
             current_block_to_process.slot_time.time() >= end_of_day_timeframe_start
         ) and (current_block_to_process.slot_time.time() <= end_of_day_timeframe_end):
-
             previous_block_height = current_block_to_process.height - 1
             previous_block_info = self.grpcclient.get_finalized_block_at_height(
                 previous_block_height
@@ -510,7 +507,6 @@ class Heartbeat:
                 current_block_to_process.slot_time.day
                 != previous_block_info.slot_time.day
             ):
-
                 start_of_day0 = previous_block_info.slot_time.replace(
                     hour=0, minute=0, second=0, microsecond=0
                 )
@@ -686,7 +682,6 @@ class Heartbeat:
                     )
                     self.queues[Queue.involved_all] = []
                 if len(self.queues[Queue.involved_transfer]) > 0:
-
                     result = self.db[Collections.involved_accounts_transfer].bulk_write(
                         self.queues[Queue.involved_transfer]
                     )
@@ -748,7 +743,6 @@ class Heartbeat:
 
         start = dt.datetime.now()
         while len(block_list) > 0:
-
             current_block_to_process: CCD_BlockInfo = block_list.pop(0)
             try:
                 self.add_block_and_txs_to_queue(current_block_to_process)
@@ -856,7 +850,6 @@ class Heartbeat:
                 and (request_counter < MAX_BLOCKS_PER_RUN)
                 and not block_to_request_in_queue
             ):
-
                 request_counter += 1
 
                 # increment the block height to request
@@ -892,11 +885,10 @@ class Heartbeat:
                         f"Block retrieved: {self.finalized_block_infos_to_process[0].height:,.0f}"
                     )
                 else:
-
                     console.log(
                         f"Blocks retrieved: {self.finalized_block_infos_to_process[0].height:,.0f} - {self.finalized_block_infos_to_process[-1].height:,.0f}"
                     )
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
 
     async def grpc_check_connection(self):
         while True:
@@ -906,7 +898,6 @@ class Heartbeat:
     async def update_nodes_from_dashboard(self):
         while True:
             async with aiohttp.ClientSession() as session:
-
                 url = "https://dashboard.mainnet.concordium.software/nodesSummary"
                 async with session.get(url) as resp:
                     t = await resp.json()
