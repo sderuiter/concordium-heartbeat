@@ -90,6 +90,8 @@ class Heartbeat:
             self.mongodb.mainnet if not self.TESTNET else self.mongodb.testnet
         )
         self.finalized_block_infos_to_process: list[CCD_BlockInfo] = []
+        self.special_purpose_block_infos_to_process: list[CCD_BlockInfo] = []
+
         self.existing_source_modules: dict[CCD_ModuleRef, set] = {}
         self.queues: Dict[Collections, list] = {}
         for q in Queue:
@@ -737,6 +739,35 @@ class Heartbeat:
 
             await asyncio.sleep(1)
 
+    def process_list_of_blocks(self, block_list: list):
+        result = self.db[Collections.modules].find({})
+        self.existing_source_modules: dict[CCD_ModuleRef, set] = {
+            x["_id"]: set(x["contracts"]) for x in list(result)
+        }
+        self.queues[Queue.updated_modules] = []
+
+        start = dt.datetime.now()
+        while len(block_list) > 0:
+
+            current_block_to_process: CCD_BlockInfo = block_list.pop(0)
+            try:
+                self.add_block_and_txs_to_queue(current_block_to_process)
+
+                self.lookout_for_payday(current_block_to_process)
+                self.lookout_for_end_of_day(current_block_to_process)
+
+            except Exception as e:
+                self.log_error_in_mongo(e, current_block_to_process)
+        duration = dt.datetime.now() - start
+        console.log(
+            f"Spent {duration.total_seconds():,.0f} sec on {len(self.queues[Queue.transactions]):,.0f} txs."
+        )
+
+        if len(self.queues[Queue.instances]) > 0:
+            self.add_back_updated_modules_to_queue(current_block_to_process)
+
+        return current_block_to_process
+
     async def process_blocks(self):
         """
         This method takes the queue `finalized_block_infos_to_process` and processes
@@ -745,37 +776,10 @@ class Heartbeat:
         while True:
             if len(self.finalized_block_infos_to_process) > 0:
                 pp = copy(self.finalized_block_infos_to_process)
-
-                result = self.db[Collections.modules].find({})
-                self.existing_source_modules: dict[CCD_ModuleRef, set] = {
-                    x["_id"]: set(x["contracts"]) for x in list(result)
-                }
-                self.queues[Queue.updated_modules] = []
-
-                start = dt.datetime.now()
-                while len(self.finalized_block_infos_to_process) > 0:
-
-                    current_block_to_process: CCD_BlockInfo = (
-                        self.finalized_block_infos_to_process.pop(0)
-                    )
-                    # console.log(
-                    #     f"Processing {current_block_to_process.height:,.0f} with {current_block_to_process.transaction_count:4,.0f} transaction(s)..."
-                    # )
-                    try:
-                        self.add_block_and_txs_to_queue(current_block_to_process)
-
-                        self.lookout_for_payday(current_block_to_process)
-                        self.lookout_for_end_of_day(current_block_to_process)
-
-                    except Exception as e:
-                        self.log_error_in_mongo(e, current_block_to_process)
-                duration = dt.datetime.now() - start
-                console.log(
-                    f"Spent {duration.total_seconds():,.0f} sec on {len(self.queues[Queue.transactions]):,.0f} txs."
+                # this is the last block that was processed
+                current_block_to_process = self.process_list_of_blocks(
+                    self.finalized_block_infos_to_process
                 )
-
-                if len(self.queues[Queue.instances]) > 0:
-                    self.add_back_updated_modules_to_queue(current_block_to_process)
 
                 self.log_last_processed_message_in_mongo(current_block_to_process)
                 if len(pp) == 1:
@@ -785,6 +789,51 @@ class Heartbeat:
                         f"Blocks processed: {pp[0].height:,.0f} - {pp[-1].height:,.0f}"
                     )
             await asyncio.sleep(1)
+
+    async def process_special_purpose_blocks(self):
+        """
+        This method takes the queue `special_purpose_block_infos_to_process` and processes
+        each block.
+        """
+        while True:
+            if len(self.special_purpose_block_infos_to_process) > 0:
+                pp = copy(self.special_purpose_block_infos_to_process)
+                # this is the last block that was processed
+
+                _ = self.process_list_of_blocks(
+                    self.special_purpose_block_infos_to_process
+                )
+
+                if len(pp) == 1:
+                    console.log(f"SP Block processed: {pp[0].height:,.0f}")
+                else:
+                    console.log(
+                        f"SP Blocks processed: {pp[0].height:,.0f} - {pp[-1].height:,.0f}"
+                    )
+
+            _ = self.db[Collections.helpers].delete_one(
+                {"_id": "special_purpose_block_request"}
+            )
+            await asyncio.sleep(10)
+
+    async def get_special_purpose_blocks(self):
+        """
+        This methods gets special purpose blocks from the chosen net.
+        It batches blocks up to MAX_BLOCKS_PER_RUN and stores blocks to be
+        processed in the queue `finalized_block_infos_to_process`.
+        """
+        while True:
+            request_counter = 0
+            result = self.db[Collections.helpers].find_one(
+                {"_id": "special_purpose_block_request"}
+            )
+            if result:
+                for height in result["heights"]:
+                    self.special_purpose_block_infos_to_process.append(
+                        self.grpcclient.get_finalized_block_at_height(height)
+                    )
+
+            await asyncio.sleep(10)
 
     async def get_finalized_blocks(self):
         """
@@ -1038,6 +1087,7 @@ class Heartbeat:
                 self.create_index(collection, "type.type", ASCENDING)
                 self.create_index(collection, "type.contents", ASCENDING)
                 self.create_index(collection, "block_info.height", ASCENDING)
+                self.create_index(collection, "block_info.slot_time", ASCENDING)
 
             if not TESTNET:
                 if collection == Collections.paydays:
@@ -1078,7 +1128,7 @@ def main():
                 {"host": "31.21.31.76", "port": 20002},
             ]
         )
-        console.log(f"Connecting on {TESTNET_IP}:{TESTNET_PORT}")
+        # console.log(f"Connecting on {TESTNET_IP}:{TESTNET_PORT}")
     else:
         grpcclient = GRPCClient(
             hosts=[
@@ -1103,6 +1153,8 @@ def main():
     loop.create_task(heartbeat.get_finalized_blocks())
     loop.create_task(heartbeat.process_blocks())
     loop.create_task(heartbeat.send_to_mongo())
+    loop.create_task(heartbeat.get_special_purpose_blocks())
+    loop.create_task(heartbeat.process_special_purpose_blocks())
 
     # loop.create_task(heartbeat.grpc_check_connection())
 
