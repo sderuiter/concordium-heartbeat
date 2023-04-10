@@ -805,8 +805,15 @@ class Heartbeat:
                         f"SP Blocks processed: {pp[0].height:,.0f} - {pp[-1].height:,.0f}"
                     )
 
-            _ = self.db[Collections.helpers].delete_one(
-                {"_id": "special_purpose_block_request"}
+            d = {"_id": "special_purpose_block_request", "heights": []}
+            _ = self.db[Collections.helpers].bulk_write(
+                [
+                    ReplaceOne(
+                        {"_id": "special_purpose_block_request"},
+                        replacement=d,
+                        upsert=True,
+                    )
+                ]
             )
             await asyncio.sleep(10)
 
@@ -1074,6 +1081,9 @@ class Heartbeat:
             if collection == Collections.cns_domains:
                 self.create_index(collection, "domain_name", ASCENDING)
 
+            if collection == Collections.nightly_accounts:
+                self.create_index(collection, "index", ASCENDING)
+
             if collection == Collections.transactions:
                 self.create_index(collection, "type.type", ASCENDING)
                 self.create_index(collection, "type.contents", ASCENDING)
@@ -1111,24 +1121,9 @@ def main():
     MongoDB collections.
     """
     console.log(f"{NET=} -> {TESTNET=}")
+    grpcclient = GRPCClient()
     if TESTNET:
-        grpcclient = GRPCClient(
-            hosts=[
-                # {"host": "localhost", "port": 20000},
-                {"host": "207.180.201.8", "port": 20001},
-                {"host": "31.21.31.76", "port": 20002},
-            ]
-        )
-        # console.log(f"Connecting on {TESTNET_IP}:{TESTNET_PORT}")
-    else:
-        grpcclient = GRPCClient(
-            hosts=[
-                {"host": "localhost", "port": 20000},
-                {"host": "31.21.31.76", "port": 20001},
-                {"host": "207.180.201.8", "port": 20000},
-            ]
-        )
-        # console.log(f"Connecting on {MAINNET_IP}:{MAINNET_PORT}")
+        grpcclient.switch_to_net(net="testnet")
 
     heartbeat = Heartbeat(grpcclient, tooter, mongodb, TESTNET)
 
@@ -1146,8 +1141,6 @@ def main():
     loop.create_task(heartbeat.send_to_mongo())
     loop.create_task(heartbeat.get_special_purpose_blocks())
     loop.create_task(heartbeat.process_special_purpose_blocks())
-
-    # loop.create_task(heartbeat.grpc_check_connection())
 
     loop.run_forever()
 
