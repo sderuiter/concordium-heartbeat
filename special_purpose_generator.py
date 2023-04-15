@@ -39,6 +39,7 @@ result = [
     if x["effect_count"] == 0
 ]
 heights = [x["block_info"]["height"] for x in result]
+
 d = {"_id": "special_purpose_block_request", "heights": heights}
 _ = mongodb.mainnet[Collections.helpers].bulk_write(
     [
