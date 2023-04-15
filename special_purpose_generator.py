@@ -16,7 +16,7 @@ mongodb = MongoDB(
     tooter,
 )
 
-action_type = "delegator"
+action_type = "baker"
 pipeline = [
     {
         "$match": {
