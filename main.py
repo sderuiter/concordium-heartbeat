@@ -905,7 +905,10 @@ class Heartbeat:
     async def update_nodes_from_dashboard(self):
         while True:
             async with aiohttp.ClientSession() as session:
-                url = "https://dashboard.mainnet.concordium.software/nodesSummary"
+                if TESTNET:
+                    url = "https://dashboard.testnet.concordium.com/nodesSummary"
+                else:
+                    url = "https://dashboard.mainnet.concordium.software/nodesSummary"
                 async with session.get(url) as resp:
                     t = await resp.json()
 
@@ -1030,8 +1033,8 @@ class Heartbeat:
             self.queues[Queue.block_per_day]
         )
 
-    def create_index(self, collection: Collections, key: str, direction):
-        response = self.db[collection].create_index([(key, direction)])
+    def create_index(self, collection: Collections, key: str, direction, sparse=False):
+        response = self.db[collection].create_index([(key, direction)], sparse=sparse)
         print(
             f"Reponse for index creation on collection '{collection.value}' for key '{key}': {response}."
         )
@@ -1089,6 +1092,27 @@ class Heartbeat:
                 self.create_index(collection, "type.contents", ASCENDING)
                 self.create_index(collection, "block_info.height", ASCENDING)
                 self.create_index(collection, "block_info.slot_time", ASCENDING)
+                self.create_index(
+                    collection, "account_creation", ASCENDING, sparse=True
+                )
+                self.create_index(
+                    collection,
+                    "account_transaction.effects.account_transfer",
+                    ASCENDING,
+                    sparse=True,
+                )
+                self.create_index(
+                    collection,
+                    "account_transaction.effects.baker_configured",
+                    ASCENDING,
+                    sparse=True,
+                )
+                self.create_index(
+                    collection,
+                    "account_transaction.effects.delegation_configured",
+                    ASCENDING,
+                    sparse=True,
+                )
 
             if not TESTNET:
                 if collection == Collections.paydays:
