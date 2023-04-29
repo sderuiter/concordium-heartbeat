@@ -4,8 +4,9 @@ from rich import print
 import datetime as dt
 from sharingiscaring.GRPCClient.CCD_Types import *
 from sharingiscaring.GRPCClient.types_pb2 import Empty
-from sharingiscaring.tooter import Tooter
+from sharingiscaring.tooter import Tooter, TooterChannel, TooterType
 from sharingiscaring.mongodb import MongoDB, Collections
+from sharingiscaring.enums import NET
 from sharingiscaring.node import ConcordiumNodeFromDashboard
 import sharingiscaring.GRPCClient.wadze as wadze
 from pymongo.collection import Collection
@@ -80,14 +81,14 @@ class ClassificationResult:
 
 class Heartbeat:
     def __init__(
-        self, grpcclient: GRPCClient, tooter: Tooter, mongodb: MongoDB, TESTNET=False
+        self, grpcclient: GRPCClient, tooter: Tooter, mongodb: MongoDB, net: str
     ):
         self.grpcclient = grpcclient
         self.tooter = tooter
         self.mongodb = mongodb
-        self.TESTNET = TESTNET
+        self.net = net
         self.db: Dict[Collections, Collection] = (
-            self.mongodb.mainnet if not self.TESTNET else self.mongodb.testnet
+            self.mongodb.mainnet if self.net == "mainnet" else self.mongodb.testnet
         )
         self.finalized_block_infos_to_process: list[CCD_BlockInfo] = []
         self.special_purpose_block_infos_to_process: list[CCD_BlockInfo] = []
@@ -239,7 +240,7 @@ class Heartbeat:
 
     def get_module_metadata(self, block_hash: str, module_ref: str) -> Dict[str, str]:
         # console.log(f"{module_ref=}")
-        ms = self.grpcclient.get_module_source(module_ref, block_hash)
+        ms = self.grpcclient.get_module_source(module_ref, block_hash, NET(self.net))
 
         if ms.v0:
             bs = io.BytesIO(bytes.fromhex(ms.v0))
@@ -344,6 +345,7 @@ class Heartbeat:
                             index_contract["index"],
                             index_contract["subindex"],
                             block_info.hash,
+                            NET(self.net),
                         )
                         instance_info: dict = instance_info.dict(exclude_none=True)
 
@@ -455,7 +457,7 @@ class Heartbeat:
         if block_info.transaction_count > 0:
             # console.log(block_info.height)
             block: CCD_Block = self.grpcclient.get_block_transaction_events(
-                block_info.hash
+                block_info.hash, NET(self.net)
             )
 
             json_block_info.update(
@@ -500,7 +502,7 @@ class Heartbeat:
         ) and (current_block_to_process.slot_time.time() <= end_of_day_timeframe_end):
             previous_block_height = current_block_to_process.height - 1
             previous_block_info = self.grpcclient.get_finalized_block_at_height(
-                previous_block_height
+                previous_block_height, NET(self.net)
             )
 
             if (
@@ -527,7 +529,7 @@ class Heartbeat:
 
                 if len(start_of_day_blocks) == 0:
                     start_of_day_blocks = [
-                        self.grpcclient.get_finalized_block_at_height(0)
+                        self.grpcclient.get_finalized_block_at_height(0, NET(self.net))
                     ]
                     self.add_end_of_day_to_queue(
                         f"{previous_block_info.slot_time:%Y-%m-%d}",
@@ -552,7 +554,7 @@ class Heartbeat:
             current_block_to_process.slot_time.time() < payday_timeframe_end
         ):
             special_events = self.grpcclient.get_block_special_events(
-                current_block_to_process.hash
+                current_block_to_process.hash, NET(self.net)
             )
             found = False
             for se in special_events:
@@ -831,7 +833,9 @@ class Heartbeat:
             if result:
                 for height in result["heights"]:
                     self.special_purpose_block_infos_to_process.append(
-                        self.grpcclient.get_finalized_block_at_height(height)
+                        self.grpcclient.get_finalized_block_at_height(
+                            height, NET(self.net)
+                        )
                     )
 
             await asyncio.sleep(10)
@@ -873,7 +877,7 @@ class Heartbeat:
                     try:
                         finalized_block_info_at_height = (
                             self.grpcclient.get_finalized_block_at_height(
-                                heartbeat_last_processed_block_height
+                                heartbeat_last_processed_block_height, NET(self.net)
                             )
                         )
                     except:
@@ -897,32 +901,50 @@ class Heartbeat:
                     )
             await asyncio.sleep(1)
 
-    async def grpc_check_connection(self):
-        while True:
-            self.grpcclient.check_connection()
-            await asyncio.sleep(1)
-
     async def update_nodes_from_dashboard(self):
         while True:
-            async with aiohttp.ClientSession() as session:
-                if TESTNET:
-                    url = "https://dashboard.testnet.concordium.com/nodesSummary"
-                else:
-                    url = "https://dashboard.mainnet.concordium.software/nodesSummary"
-                async with session.get(url) as resp:
-                    t = await resp.json()
+            try:
+                async with aiohttp.ClientSession() as session:
+                    if self.net == "testnet":
+                        url = "https://dashboard.testnet.concordium.com/nodesSummary"
+                    else:
+                        url = (
+                            "https://dashboard.mainnet.concordium.software/nodesSummary"
+                        )
+                    async with session.get(url) as resp:
+                        t = await resp.json()
 
-                    queue = []
+                        queue = []
 
-                    for raw_node in t:
-                        node = ConcordiumNodeFromDashboard(**raw_node)
-                        d = node.dict()
-                        d["_id"] = node.nodeId
+                        for raw_node in t:
+                            node = ConcordiumNodeFromDashboard(**raw_node)
+                            d = node.dict()
+                            d["_id"] = node.nodeId
 
-                        queue.append(ReplaceOne({"_id": node.nodeId}, d, upsert=True))
+                            queue.append(
+                                ReplaceOne({"_id": node.nodeId}, d, upsert=True)
+                            )
 
-                    _ = self.db[Collections.dashboard_nodes].delete_many({})
-                    _ = self.db[Collections.dashboard_nodes].bulk_write(queue)
+                        _ = self.db[Collections.dashboard_nodes].delete_many({})
+                        _ = self.db[Collections.dashboard_nodes].bulk_write(queue)
+
+                        # update nodes status retrieval
+                        query = {"_id": "heartbeat_last_timestamp_dashboard_nodes"}
+                        self.db[Collections.helpers].replace_one(
+                            query,
+                            {
+                                "_id": "heartbeat_last_timestamp_dashboard_nodes",
+                                "timestamp": dt.datetime.utcnow(),
+                            },
+                            upsert=True,
+                        )
+
+            except Exception as e:
+                self.tooter.send(
+                    channel=TooterChannel.NOTIFIER,
+                    message=f"Failed to get dashboard nodes. Error: {e}",
+                    notifier_type=TooterType.REQUESTS_ERROR,
+                )
 
             await asyncio.sleep(60)
 
@@ -960,7 +982,7 @@ class Heartbeat:
         Method to re-create the blocks_per_day collections
         for testnet and mainnet.
         """
-        if TESTNET:
+        if self.net == "testnet":
             start_date = dt.datetime(2022, 6, 13)
         else:
             start_date = dt.datetime(2021, 6, 9)
@@ -972,7 +994,7 @@ class Heartbeat:
         for index, date in enumerate(date_range):
             date_string = f"{date:%Y-%m-%d}"
             if index == 0:
-                if TESTNET:
+                if self.net == "testnet":
                     start_of_day0 = date.replace(
                         hour=10, minute=0, second=0, microsecond=0
                     )
@@ -1114,7 +1136,7 @@ class Heartbeat:
                     sparse=True,
                 )
 
-            if not TESTNET:
+            if self.net == "mainnet":
                 if collection == Collections.paydays:
                     self.create_index(collection, "date", ASCENDING)
                     self.create_index(collection, "height_for_first_block", ASCENDING)
@@ -1144,12 +1166,10 @@ def main():
     3. `send_to_mongo`: this method takes all queues and sends them to the respective
     MongoDB collections.
     """
-    console.log(f"{NET=} -> {TESTNET=}")
+    console.log(f"{RUN_ON_NET=}")
     grpcclient = GRPCClient()
-    if TESTNET:
-        grpcclient.switch_to_net(net="testnet")
 
-    heartbeat = Heartbeat(grpcclient, tooter, mongodb, TESTNET)
+    heartbeat = Heartbeat(grpcclient, tooter, mongodb, RUN_ON_NET)
 
     # these to helper methods are not needed, only things
     # go really wrong...
@@ -1159,13 +1179,13 @@ def main():
 
     loop = asyncio.get_event_loop()
 
-    loop.create_task(heartbeat.update_nodes_from_dashboard())
     loop.create_task(heartbeat.get_finalized_blocks())
     loop.create_task(heartbeat.process_blocks())
     loop.create_task(heartbeat.send_to_mongo())
+
     loop.create_task(heartbeat.get_special_purpose_blocks())
     loop.create_task(heartbeat.process_special_purpose_blocks())
-
+    loop.create_task(heartbeat.update_nodes_from_dashboard())
     loop.run_forever()
 
 

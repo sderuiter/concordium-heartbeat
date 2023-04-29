@@ -1,0 +1,4 @@
+/.venv
+
+/envdonotcommit.py
+/test_blocks_transactions.py

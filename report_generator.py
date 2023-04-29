@@ -128,9 +128,10 @@ class ExchangeAccountReport:
         pass
 
     def calculate_exchange_statistics(self):
-        self.exchange_statistics[ExchangeStatistic.net_flow] = sum(
-            self.side[BuyerSeller.Buyer].amounts
-        ) - sum(self.side[BuyerSeller.Seller].amounts)
+        self.exchange_statistics[ExchangeStatistic.net_flow] = (
+            self.side[BuyerSeller.Buyer].statistics[SideStatistic.sum_of_all_amounts]
+            - self.side[BuyerSeller.Seller].statistics[SideStatistic.sum_of_all_amounts]
+        )
 
 
 def get_period(mongodb: MongoDB, start_day: str, end_day: str):
@@ -216,7 +217,7 @@ for exchange, e in exchanges.items():
     html += '<th class="text-end">B Avg Amounts</th>'
     html += '<th class="text-end">S Un. Accounts</th>'
     html += '<th class="text-end">S Avg Amounts</th>'
-    html += '<th class="text-end">Net Flow (+ = B on exch)</th></thead>'
+    html += '<th class="text-end">Net Flow (+ = B on exch)</th></tr></thead>'
 
     sum_net_flow = 0
     sum_amount = {BuyerSeller.Buyer: 0, BuyerSeller.Seller: 0}
@@ -263,7 +264,7 @@ for period, e in periods.items():
     html += '<th class="text-end">B Avg Amounts</th>'
     html += '<th class="text-end">S Un. Accounts</th>'
     html += '<th class="text-end">S Avg Amounts</th>'
-    html += '<th class="text-end">Net Flow (+ = B on exch)</th></thead>'
+    html += '<th class="text-end">Net Flow (+ = B on exch)</th></tr></thead>'
 
     sum_net_flow = 0
     sum_amount = {BuyerSeller.Buyer: 0, BuyerSeller.Seller: 0}

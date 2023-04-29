@@ -16,7 +16,7 @@ mongodb = MongoDB(
     tooter,
 )
 
-action_type = "baker"
+action_type = "delegation"
 pipeline = [
     {
         "$match": {
@@ -38,16 +38,19 @@ result = [
     for x in mongodb.mainnet[Collections.transactions].aggregate(pipeline)
     if x["effect_count"] == 0
 ]
-heights = [x["block_info"]["height"] for x in result]
-
-d = {"_id": "special_purpose_block_request", "heights": heights}
-_ = mongodb.mainnet[Collections.helpers].bulk_write(
-    [
-        ReplaceOne(
-            {"_id": "special_purpose_block_request"},
-            replacement=d,
-            upsert=True,
-        )
-    ]
+print(
+    f"account_transaction.effects.{action_type}_configured: # txs with 0 effects: {len(result)}."
 )
+# heights = [x["block_info"]["height"] for x in result]
+
+# d = {"_id": "special_purpose_block_request", "heights": heights}
+# _ = mongodb.mainnet[Collections.helpers].bulk_write(
+#     [
+#         ReplaceOne(
+#             {"_id": "special_purpose_block_request"},
+#             replacement=d,
+#             upsert=True,
+#         )
+#     ]
+# )
 pass
