@@ -6,7 +6,14 @@ from sharingiscaring.mongodb import (
     MongoTypeInvolvedContract,
 )
 from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.cis import CIS, StandardIdentifiers, mintEvent, transferEvent
+from sharingiscaring.cis import (
+    CIS,
+    StandardIdentifiers,
+    mintEvent,
+    burnEvent,
+    transferEvent,
+    tokenMetadataEvent,
+)
 from sharingiscaring.enums import NET
 from sharingiscaring.tooter import Tooter
 from pymongo import ASCENDING, DESCENDING, ReplaceOne
@@ -82,6 +89,41 @@ def save_mint(
     )
 
 
+def save_metadata(
+    db_to_use: dict[Collections, Collection],
+    instance: MongoTypeInstance,
+    result: tokenMetadataEvent,
+):
+    # steps
+    # 1. find or create token in/from collection tokens_token_addresses
+    # 2. update metadata
+
+    # Step 1
+    token_address = f"{instance.id}-{result.token_id}"
+    d = db_to_use[Collections.tokens_token_addresses].find_one({"_id": token_address})
+    if not d:
+        print(f"Huh? {token_address} isn't minted yet, but is now updating metadata?")
+        d = {
+            "_id": token_address,
+            "contract": instance.id,
+            "token_id": result.token_id,
+        }
+    d.update(
+        {
+            "metadata_url": result.metadata.url,
+        }
+    )
+    _ = db_to_use[Collections.tokens_token_addresses].bulk_write(
+        [
+            ReplaceOne(
+                {"_id": token_address},
+                replacement=d,
+                upsert=True,
+            )
+        ]
+    )
+
+
 def save_transfer(
     db_to_use: dict[Collections, Collection],
     instance: MongoTypeInstance,
@@ -107,6 +149,10 @@ def save_transfer(
             (int(current_token["token_amount"]) - result.token_amount)
         )
         current_tokens[token_address] = current_token
+    else:
+        print(
+            f"{result.from_address} is transferring a token at {token_address} that is doesn't own?"
+        )
 
     d.update({"tokens": current_tokens})
 
@@ -155,8 +201,75 @@ def save_transfer(
     )
 
 
-net = "mainnet"
+def save_burn(
+    db_to_use: dict[Collections, Collection],
+    instance: MongoTypeInstance,
+    result: burnEvent,
+):
+    # steps
+    # 1. lower token amount for from_ address
+
+    token_address = f"{instance.id}-{result.token_id}"
+
+    # Step 1
+    # lookup existing account
+    d = db_to_use[Collections.tokens_accounts].find_one({"_id": result.from_address})
+    if not d:
+        d = {"_id": result.from_address, "tokens": {}}  # keyed on token_address
+
+    current_tokens = d["tokens"]
+    if token_address in current_tokens.keys():
+        current_token = current_tokens[token_address]
+        # lower the current amount of the token
+        current_token["token_amount"] = str(
+            (int(current_token["token_amount"]) - result.token_amount)
+        )
+        current_tokens[token_address] = current_token
+    else:
+        print(
+            f"{result.from_address} is burning a token at {token_address} that is doesn't own?"
+        )
+
+    d.update({"tokens": current_tokens})
+
+    _ = db_to_use[Collections.tokens_accounts].bulk_write(
+        [
+            ReplaceOne(
+                {"_id": result.from_address},
+                replacement=d,
+                upsert=True,
+            )
+        ]
+    )
+
+
+def process_event(cis: CIS, db_to_use, instance, event):
+    tag_, result = cis.process_log_events(event)
+    if result:
+        if tag_ == 255:
+            save_transfer(db_to_use, instance, result)
+        if tag_ == 254:
+            save_mint(db_to_use, instance, result)
+        if tag_ == 253:
+            save_burn(db_to_use, instance, result)
+        if tag_ == 252:
+            # operatorUpdateEvent
+            pass
+        if tag_ == 251:
+            save_metadata(db_to_use, instance, result)
+
+    else:
+        print(f"{instance.id} gave error with tag {tag_} for event {event}.")
+
+
+net = "testnet"
 db_to_use = mongodb.testnet if net == "testnet" else mongodb.mainnet
+
+# REMOVE in HEARTBEAT
+db_to_use[Collections.tokens_accounts].delete_many({})
+db_to_use[Collections.tokens_token_addresses].delete_many({})
+# REMOVE in HEARTBEAT
+
 
 result = [MongoTypeInstance(**x) for x in db_to_use[Collections.instances].find()]
 
@@ -190,25 +303,23 @@ for index, instance in enumerate(result):
 
             tx_result = [CCD_BlockItemSummary(**x) for x in int_result]
             for tx in tx_result:
+                if tx.account_transaction.effects.contract_initialized:
+                    for (
+                        event
+                    ) in tx.account_transaction.effects.contract_initialized.events:
+                        process_event(cis, db_to_use, instance, event)
+
                 if tx.account_transaction.effects.contract_update_issued:
                     for (
                         effect
                     ) in tx.account_transaction.effects.contract_update_issued.effects:
                         if effect:
+                            if effect.interrupted:
+                                for event in effect.interrupted.events:
+                                    process_event(cis, db_to_use, instance, event)
                             if effect.updated:
                                 for event in effect.updated.events:
-                                    tag_, result = cis.process_log_events(event)
-                                    if result:
-                                        if tag_ == 255:
-                                            save_transfer(db_to_use, instance, result)
-                                        if tag_ == 254:
-                                            save_mint(db_to_use, instance, result)
-                                        # if tag_ > 252:
-                                        #     print(result)
-                                    # else:
-                                    #     print(
-                                    #         f"Error processing logs in {tx.hash} for {index}."
-                                    #     )
+                                    process_event(cis, db_to_use, instance, event)
 
             pass
 
