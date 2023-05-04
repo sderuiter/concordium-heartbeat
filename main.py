@@ -745,7 +745,7 @@ class Heartbeat:
 
             await asyncio.sleep(1)
 
-    def process_list_of_blocks(self, block_list: list):
+    def process_list_of_blocks(self, block_list: list, special_purpose: bool = False):
         result = self.db[Collections.modules].find({})
         self.existing_source_modules: dict[CCD_ModuleRef, set] = {
             x["_id"]: set(x["contracts"]) for x in list(result)
@@ -761,6 +761,24 @@ class Heartbeat:
                 self.lookout_for_payday(current_block_to_process)
                 self.lookout_for_end_of_day(current_block_to_process)
 
+                if special_purpose:
+                    # if it's a special purpose block, we need to remove it from the helper
+                    result = self.db[Collections.helpers].find_one(
+                        {"_id": "special_purpose_block_request"}
+                    )
+                    if result:
+                        heights = result["heights"]
+                        heights.remove(current_block_to_process.height)
+                        result.update({"heights": heights})
+                    _ = self.db[Collections.helpers].bulk_write(
+                        [
+                            ReplaceOne(
+                                {"_id": "special_purpose_block_request"},
+                                replacement=result,
+                                upsert=True,
+                            )
+                        ]
+                    )
             except Exception as e:
                 self.log_error_in_mongo(e, current_block_to_process)
         duration = dt.datetime.now() - start
@@ -806,7 +824,7 @@ class Heartbeat:
                 # this is the last block that was processed
 
                 _ = self.process_list_of_blocks(
-                    self.special_purpose_block_infos_to_process
+                    self.special_purpose_block_infos_to_process, special_purpose=True
                 )
 
                 if len(pp) == 1:
@@ -815,17 +833,6 @@ class Heartbeat:
                     console.log(
                         f"SP Blocks processed: {pp[0].height:,.0f} - {pp[-1].height:,.0f}"
                     )
-            else:
-                d = {"_id": "special_purpose_block_request", "heights": []}
-                _ = self.db[Collections.helpers].bulk_write(
-                    [
-                        ReplaceOne(
-                            {"_id": "special_purpose_block_request"},
-                            replacement=d,
-                            upsert=True,
-                        )
-                    ]
-                )
                 await asyncio.sleep(5)
 
     async def get_special_purpose_blocks(self):
@@ -843,7 +850,7 @@ class Heartbeat:
                 for height in result["heights"]:
                     self.special_purpose_block_infos_to_process.append(
                         self.grpcclient.get_finalized_block_at_height(
-                            height, NET(self.net)
+                            int(height), NET(self.net)
                         )
                     )
 
