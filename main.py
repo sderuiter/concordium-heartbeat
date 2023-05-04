@@ -833,7 +833,7 @@ class Heartbeat:
                     console.log(
                         f"SP Blocks processed: {pp[0].height:,.0f} - {pp[-1].height:,.0f}"
                     )
-                await asyncio.sleep(5)
+            await asyncio.sleep(5)
 
     async def get_special_purpose_blocks(self):
         """
