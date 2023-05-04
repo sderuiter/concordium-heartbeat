@@ -5,11 +5,20 @@ import datetime as dt
 from sharingiscaring.GRPCClient.CCD_Types import *
 from sharingiscaring.GRPCClient.types_pb2 import Empty
 from sharingiscaring.tooter import Tooter, TooterChannel, TooterType
-from sharingiscaring.mongodb import MongoDB, Collections
+from sharingiscaring.mongodb import MongoDB, Collections, MongoTypeInstance
 from sharingiscaring.enums import NET
 from sharingiscaring.node import ConcordiumNodeFromDashboard
+from sharingiscaring.cis import (
+    CIS,
+    StandardIdentifiers,
+    mintEvent,
+    burnEvent,
+    transferEvent,
+    tokenMetadataEvent,
+)
 import sharingiscaring.GRPCClient.wadze as wadze
 from pymongo.collection import Collection
+from pymongo.database import Database
 from pymongo import ASCENDING, DESCENDING
 from pymongo import ReplaceOne
 import aiohttp
@@ -806,18 +815,18 @@ class Heartbeat:
                     console.log(
                         f"SP Blocks processed: {pp[0].height:,.0f} - {pp[-1].height:,.0f}"
                     )
-
-            d = {"_id": "special_purpose_block_request", "heights": []}
-            _ = self.db[Collections.helpers].bulk_write(
-                [
-                    ReplaceOne(
-                        {"_id": "special_purpose_block_request"},
-                        replacement=d,
-                        upsert=True,
-                    )
-                ]
-            )
-            await asyncio.sleep(10)
+            else:
+                d = {"_id": "special_purpose_block_request", "heights": []}
+                _ = self.db[Collections.helpers].bulk_write(
+                    [
+                        ReplaceOne(
+                            {"_id": "special_purpose_block_request"},
+                            replacement=d,
+                            upsert=True,
+                        )
+                    ]
+                )
+                await asyncio.sleep(5)
 
     async def get_special_purpose_blocks(self):
         """
