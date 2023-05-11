@@ -11,10 +11,6 @@ from sharingiscaring.node import ConcordiumNodeFromDashboard
 from sharingiscaring.cis import (
     CIS,
     StandardIdentifiers,
-    # mintEvent,
-    # burnEvent,
-    # transferEvent,
-    # tokenMetadataEvent,
 )
 import sharingiscaring.GRPCClient.wadze as wadze
 from pymongo.collection import Collection
