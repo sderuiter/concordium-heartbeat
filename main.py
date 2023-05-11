@@ -11,10 +11,10 @@ from sharingiscaring.node import ConcordiumNodeFromDashboard
 from sharingiscaring.cis import (
     CIS,
     StandardIdentifiers,
-    mintEvent,
-    burnEvent,
-    transferEvent,
-    tokenMetadataEvent,
+    # mintEvent,
+    # burnEvent,
+    # transferEvent,
+    # tokenMetadataEvent,
 )
 import sharingiscaring.GRPCClient.wadze as wadze
 from pymongo.collection import Collection
@@ -46,6 +46,11 @@ mongodb = MongoDB(
     },
     tooter,
 )
+
+
+class AccountTransactionOutcome(Enum):
+    Success = "success"
+    Failure = "failure"
 
 
 class Queue(Enum):
@@ -127,6 +132,134 @@ class Heartbeat:
         else:
             return value
 
+    def decode_cis_logged_events(
+        self, tx: CCD_BlockItemSummary, block_info: CCD_BlockInfo
+    ):
+        """
+        This method takes a transaction as input and tries to find
+        CIS logged events (mint, transfer, metadata, operator and burn).
+        Logged events are stored in a collection. Depending on the tag,
+        the logged event is executed and the result is stored in the
+        collections accounts and token_addresses.
+        """
+        # this is the ordering of effects as encountered in the transaction
+        ordering = 0
+        if tx.account_transaction:
+            if tx.account_transaction.effects.contract_initialized:
+                contract_index = (
+                    tx.account_transaction.effects.contract_initialized.address.index
+                )
+                contract_subindex = (
+                    tx.account_transaction.effects.contract_initialized.address.subindex
+                )
+                instance_address = f"<{contract_index},{contract_subindex}>"
+                entrypoint = f"{tx.account_transaction.effects.contract_initialized.init_name[5:]}.supports"
+                cis = CIS(
+                    self.grpcclient,
+                    contract_index,
+                    contract_subindex,
+                    entrypoint,
+                    NET(self.net),
+                )
+                supports_cis_1_2 = cis.supports_standards(
+                    [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
+                )
+                if supports_cis_1_2:
+                    for index, event in enumerate(
+                        tx.account_transaction.effects.contract_initialized.events
+                    ):
+                        ordering += 1
+                        cis.process_event(
+                            # cis,
+                            self.db,
+                            instance_address,
+                            event,
+                            block_info.height,
+                            tx.hash,
+                            tx.index,
+                            ordering,
+                            f"initialized-{tx.index}-{index}",
+                        )
+
+            if tx.account_transaction.effects.contract_update_issued:
+                for effect_index, effect in enumerate(
+                    tx.account_transaction.effects.contract_update_issued.effects
+                ):
+                    if effect:
+                        if effect.interrupted:
+                            contract_index = effect.interrupted.address.index
+                            contract_subindex = effect.interrupted.address.subindex
+                            instance_address = f"<{contract_index},{contract_subindex}>"
+                            instance = MongoTypeInstance(
+                                **self.db[Collections.instances].find_one(
+                                    {"_id": instance_address}
+                                )
+                            )
+                            if instance:
+                                if instance.v1:
+                                    entrypoint = instance.v1.name[5:] + ".supports"
+                                    cis = CIS(
+                                        self.grpcclient,
+                                        contract_index,
+                                        contract_subindex,
+                                        entrypoint,
+                                        NET(self.net),
+                                    )
+                                    supports_cis_1_2 = cis.supports_standards(
+                                        [
+                                            StandardIdentifiers.CIS_1,
+                                            StandardIdentifiers.CIS_2,
+                                        ]
+                                    )
+                                    if supports_cis_1_2:
+                                        for index, event in enumerate(
+                                            effect.interrupted.events
+                                        ):
+                                            ordering += 1
+                                            cis.process_event(
+                                                # cis,
+                                                self.db,
+                                                instance_address,
+                                                event,
+                                                block_info.height,
+                                                tx.hash,
+                                                tx.index,
+                                                ordering,
+                                                f"interrupted-{tx.index}-{effect_index}-{index}",
+                                            )
+
+                        if effect.updated:
+                            contract_index = effect.updated.address.index
+                            contract_subindex = effect.updated.address.subindex
+                            instance_address = f"<{contract_index},{contract_subindex}>"
+                            entrypoint = (
+                                f"{effect.updated.receive_name.split('.')[0]}.supports"
+                            )
+                            cis = CIS(
+                                self.grpcclient,
+                                contract_index,
+                                contract_subindex,
+                                entrypoint,
+                                NET(self.net),
+                            )
+                            supports_cis_1_2 = cis.supports_standards(
+                                [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
+                            )
+                            if supports_cis_1_2:
+                                for index, event in enumerate(effect.updated.events):
+                                    ordering += 1
+                                    cis.process_event(
+                                        # cis,
+                                        self.db,
+                                        instance_address,
+                                        event,
+                                        block_info.height,
+                                        tx.hash,
+                                        tx.index,
+                                        ordering,
+                                        f"updated-{tx.index}-{effect_index}-{index}",
+                                    )
+
     def classify_transaction(self, tx: CCD_BlockItemSummary):
         """
         This classifies a transaction (based on GRPCv2 output)
@@ -141,7 +274,10 @@ class Heartbeat:
         if tx.account_transaction:
             result.sender = tx.account_transaction.sender
 
-            if tx.account_transaction.outcome == "success":
+            if (
+                tx.account_transaction.outcome
+                == AccountTransactionOutcome.Success.value
+            ):
                 effects = tx.account_transaction.effects
 
                 if effects.account_transfer:
@@ -319,6 +455,8 @@ class Heartbeat:
         # console.log (f"Generating indices for {len(transactions):,.0f} transactions...")
 
         for tx in transactions:
+            _ = self.decode_cis_logged_events(tx, block_info)
+
             result = self.classify_transaction(tx)
 
             dct_transfer_and_all = self.index_transfer_and_all(tx, result, block_info)
