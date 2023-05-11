@@ -888,7 +888,9 @@ class Heartbeat:
                     result = self.db[Collections.tokens_logged_events].bulk_write(
                         self.queues[Queue.logged_events]
                     )
-                    f"E:  {len(self.queues[Queue.logged_events]):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
+                    console.log(
+                        f"E:  {len(self.queues[Queue.logged_events]):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
+                    )
                     self.queues[Queue.logged_events] = []
                 # this will only be set if the above store methods do not fail.
 
