@@ -69,6 +69,7 @@ class Queue(Enum):
     instances = 5
     modules = 6
     updated_modules = 7
+    logged_events = 8
 
 
 class ClassificationResult:
@@ -144,6 +145,7 @@ class Heartbeat:
         """
         # this is the ordering of effects as encountered in the transaction
         ordering = 0
+        logged_events = []
         if tx.account_transaction:
             if tx.account_transaction.effects.contract_initialized:
                 contract_index = (
@@ -169,7 +171,7 @@ class Heartbeat:
                         tx.account_transaction.effects.contract_initialized.events
                     ):
                         ordering += 1
-                        cis.process_event(
+                        logged_event = cis.process_event(
                             # cis,
                             self.db,
                             instance_address,
@@ -180,7 +182,8 @@ class Heartbeat:
                             ordering,
                             f"initialized-{tx.index}-{index}",
                         )
-
+                        if logged_event:
+                            logged_events.append(logged_event)
             if tx.account_transaction.effects.contract_update_issued:
                 for effect_index, effect in enumerate(
                     tx.account_transaction.effects.contract_update_issued.effects
@@ -216,7 +219,7 @@ class Heartbeat:
                                             effect.interrupted.events
                                         ):
                                             ordering += 1
-                                            cis.process_event(
+                                            logged_event = cis.process_event(
                                                 # cis,
                                                 self.db,
                                                 instance_address,
@@ -227,6 +230,8 @@ class Heartbeat:
                                                 ordering,
                                                 f"interrupted-{tx.index}-{effect_index}-{index}",
                                             )
+                                            if logged_event:
+                                                logged_events.append(logged_event)
 
                         if effect.updated:
                             contract_index = effect.updated.address.index
@@ -248,7 +253,7 @@ class Heartbeat:
                             if supports_cis_1_2:
                                 for index, event in enumerate(effect.updated.events):
                                     ordering += 1
-                                    cis.process_event(
+                                    logged_event = cis.process_event(
                                         # cis,
                                         self.db,
                                         instance_address,
@@ -259,6 +264,10 @@ class Heartbeat:
                                         ordering,
                                         f"updated-{tx.index}-{effect_index}-{index}",
                                     )
+                                    if logged_event:
+                                        logged_events.append(logged_event)
+
+        return logged_events
 
     def classify_transaction(self, tx: CCD_BlockItemSummary):
         """
@@ -455,7 +464,9 @@ class Heartbeat:
         # console.log (f"Generating indices for {len(transactions):,.0f} transactions...")
 
         for tx in transactions:
-            _ = self.decode_cis_logged_events(tx, block_info)
+            logged_events = self.decode_cis_logged_events(tx, block_info)
+            if len(logged_events) > 0:
+                self.queues[Queue.logged_events].extend(logged_events)
 
             result = self.classify_transaction(tx)
 
@@ -872,6 +883,13 @@ class Heartbeat:
                     )
                     console.log(f"End of day: U {result.upserted_count:5,.0f}")
                     self.queues[Queue.block_per_day] = []
+
+                if len(self.queues[Queue.logged_events]) > 0:
+                    result = self.db[Collections.tokens_logged_events].bulk_write(
+                        self.queues[Queue.logged_events]
+                    )
+                    console.log(f"Logged Ev.: U {result.upserted_count:5,.0f}")
+                    self.queues[Queue.logged_events] = []
                 # this will only be set if the above store methods do not fail.
 
                 # if update_:
