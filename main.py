@@ -183,7 +183,7 @@ class Heartbeat:
                     }
                 )
             else:
-                d = MongoTypeTokenHolderAddress(**d)
+                address_to_save = MongoTypeTokenHolderAddress(**d)
 
             token_to_save = MongoTypeTokenForAddress(
                 **{
