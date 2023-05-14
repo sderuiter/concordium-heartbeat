@@ -233,7 +233,7 @@ class Heartbeat:
             ] = token_address_as_class.token_holders
         except:
             console.log(
-                f"{result.tag}: {token_address_as_class.token_address} | {token_address_as_class} has no field token_holders?"
+                f"{result.tag}: {token_address_as_class.token_id} | {token_address_as_class} has no field token_holders?"
             )
 
         token_holders[result.to_address] = str(
@@ -307,11 +307,6 @@ class Heartbeat:
             token_address_as_class = self.save_mint(token_address_as_class, log)
         elif log.tag == 253:
             token_address_as_class = self.save_burn(token_address_as_class, log)
-        elif log.tag == 252:
-            pass
-            # we only save the logged event, but to not process this in
-            # token_address or accounts.
-            # save_operator(db_to_use, instance_address, result, height)
         elif log.tag == 251:
             token_address_as_class = self.save_metadata(token_address_as_class, log)
 
@@ -1369,7 +1364,7 @@ class Heartbeat:
                         [x.block_height for x in result]
                     )
 
-                    events_by_token_address = {}
+                    events_by_token_address:dict[str, list] = {}
                     for log in result:
                         events_by_token_address[
                             log.token_address
@@ -1391,6 +1386,11 @@ class Heartbeat:
                             token_address_as_class = self.db[
                                 Collections.tokens_token_addresses
                             ].find_one({"_id": token_address})
+
+                            if not token_address_as_class:
+                                token_address_as_class = self.create_new_token_address(
+                                token_address
+                            )   
 
                         logs_for_token_address = events_by_token_address[token_address]
                         for log in logs_for_token_address:
