@@ -171,12 +171,19 @@ class Heartbeat:
     ):
         _queue = []
         for address, token_amount in token_address_as_class.token_holders.items():
-            address_to_save = MongoTypeTokenHolderAddress(
-                **{
-                    "_id": address,
-                    "tokens": {},
-                }
+            address_to_save = self.db[Collections.tokens_accounts].find_one(
+                {"_id": address}
             )
+            # if this account does not exist yet, create empty dict.
+            if not address_to_save:
+                address_to_save = MongoTypeTokenHolderAddress(
+                    **{
+                        "_id": address,
+                        "tokens": {},
+                    }
+                )
+            else:
+                d = MongoTypeTokenHolderAddress(**d)
 
             token_to_save = MongoTypeTokenForAddress(
                 **{
@@ -226,12 +233,7 @@ class Heartbeat:
             ] = token_address_as_class.token_holders
         except:
             console.log(
-                f"{result.tag}: {token_address} | {token_address_as_class} has no field token_holders?"
-            )
-            Exception(
-                console.log(
-                    f"{result.tag}: {token_address} | {token_address_as_class} has no field token_holders?"
-                )
+                f"{result.tag}: {token_address_as_class.token_address} | {token_address_as_class} has no field token_holders?"
             )
 
         token_holders[result.to_address] = str(
