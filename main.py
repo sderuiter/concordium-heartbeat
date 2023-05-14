@@ -1375,7 +1375,7 @@ class Heartbeat:
                         events_by_token_address[log.token_address].append(log)
 
                     console.log(
-                        f"Starting at{(token_accounting_last_processed_block+1):,.0f}, I found {len(result):,.0f} logged events on {self.net} to process from {len(list(events_by_token_address.keys()))} token addresses."
+                        f"Token accounting: Starting at {(token_accounting_last_processed_block+1):,.0f}, I found {len(result):,.0f} logged events on {self.net} to process from {len(list(events_by_token_address.keys()))} token addresses."
                     )
                     for token_address in list(events_by_token_address.keys()):
                         queue = []
