@@ -120,7 +120,6 @@ class Heartbeat:
             self.queues[q] = []
 
     ########### Token Accounting
-
     def mongo_save_for_token_address(
         self, token_address_as_class: MongoTypeTokenAddress
     ):
