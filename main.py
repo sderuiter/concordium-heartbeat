@@ -76,6 +76,7 @@ class Queue(Enum):
     modules = 6
     updated_modules = 7
     logged_events = 8
+    token_addresses_to_redo_accounting = 9
 
 
 class ClassificationResult:
@@ -334,7 +335,10 @@ class Heartbeat:
             return value
 
     def decode_cis_logged_events(
-        self, tx: CCD_BlockItemSummary, block_info: CCD_BlockInfo
+        self,
+        tx: CCD_BlockItemSummary,
+        block_info: CCD_BlockInfo,
+        special_purpose: bool = False,
     ):
         """
         This method takes a transaction as input and tries to find
@@ -346,6 +350,7 @@ class Heartbeat:
         # this is the ordering of effects as encountered in the transaction
         ordering = 0
         logged_events = []
+        token_addresses_to_redo_accounting = []
         if tx.account_transaction:
             if tx.account_transaction.effects.contract_initialized:
                 contract_index = (
@@ -371,7 +376,7 @@ class Heartbeat:
                         tx.account_transaction.effects.contract_initialized.events
                     ):
                         ordering += 1
-                        logged_event = cis.process_event(
+                        logged_event, token_address = cis.process_event(
                             # cis,
                             self.db,
                             instance_address,
@@ -384,6 +389,10 @@ class Heartbeat:
                         )
                         if logged_event:
                             logged_events.append(logged_event)
+
+                        if special_purpose:
+                            token_addresses_to_redo_accounting.append(token_address)
+
             if tx.account_transaction.effects.contract_update_issued:
                 for effect_index, effect in enumerate(
                     tx.account_transaction.effects.contract_update_issued.effects
@@ -419,7 +428,10 @@ class Heartbeat:
                                             effect.interrupted.events
                                         ):
                                             ordering += 1
-                                            logged_event = cis.process_event(
+                                            (
+                                                logged_event,
+                                                token_address,
+                                            ) = cis.process_event(
                                                 # cis,
                                                 self.db,
                                                 instance_address,
@@ -432,6 +444,11 @@ class Heartbeat:
                                             )
                                             if logged_event:
                                                 logged_events.append(logged_event)
+
+                                            if special_purpose:
+                                                token_addresses_to_redo_accounting.append(
+                                                    token_address
+                                                )
 
                         if effect.updated:
                             contract_index = effect.updated.address.index
@@ -453,7 +470,7 @@ class Heartbeat:
                             if supports_cis_1_2:
                                 for index, event in enumerate(effect.updated.events):
                                     ordering += 1
-                                    logged_event = cis.process_event(
+                                    logged_event, token_address = cis.process_event(
                                         # cis,
                                         self.db,
                                         instance_address,
@@ -467,7 +484,12 @@ class Heartbeat:
                                     if logged_event:
                                         logged_events.append(logged_event)
 
-        return logged_events
+                                    if special_purpose:
+                                        token_addresses_to_redo_accounting.append(
+                                            token_address
+                                        )
+
+        return logged_events, token_addresses_to_redo_accounting
 
     def classify_transaction(self, tx: CCD_BlockItemSummary):
         """
@@ -656,6 +678,7 @@ class Heartbeat:
         self,
         transactions: list[CCD_BlockItemSummary],
         block_info: CCD_BlockInfo,
+        special_purpose: bool = False,
     ):
         """
         Given a list of transactions, apply rules to determine which index needs to be updated.
@@ -664,9 +687,17 @@ class Heartbeat:
         # console.log (f"Generating indices for {len(transactions):,.0f} transactions...")
 
         for tx in transactions:
-            logged_events = self.decode_cis_logged_events(tx, block_info)
+            (
+                logged_events,
+                token_addresses_to_redo_accounting,
+            ) = self.decode_cis_logged_events(tx, block_info, special_purpose)
             if len(logged_events) > 0:
                 self.queues[Queue.logged_events].extend(logged_events)
+
+            if len(token_addresses_to_redo_accounting) > 0:
+                self.queues[Queue.token_addresses_to_redo_accounting].extend(
+                    token_addresses_to_redo_accounting
+                )
 
             result = self.classify_transaction(tx)
 
@@ -801,7 +832,9 @@ class Heartbeat:
                 upsert=True,
             )
 
-    def add_block_and_txs_to_queue(self, block_info: CCD_BlockInfo):
+    def add_block_and_txs_to_queue(
+        self, block_info: CCD_BlockInfo, special_purpose: bool = False
+    ):
         try:
             json_block_info: dict = json.loads(block_info.json(exclude_none=True))
         except Exception as e:
@@ -841,7 +874,7 @@ class Heartbeat:
                 # self.lookout_for_account_transaction(block_info, tx)
 
             self.generate_indices_based_on_transactions(
-                block.transaction_summaries, block_info
+                block.transaction_summaries, block_info, special_purpose
             )
 
         self.queues[Queue.blocks].append(
@@ -1103,6 +1136,27 @@ class Heartbeat:
                         f"E:  {len(self.queues[Queue.logged_events]):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
                     )
                     self.queues[Queue.logged_events] = []
+
+                if len(self.queues[Queue.token_addresses_to_redo_accounting]) > 0:
+                    query = {"_id": "redo_token_addresses"}
+                    self.db[Collections.helpers].replace_one(
+                        query,
+                        {
+                            "_id": "redo_token_addresses",
+                            "token_addresses": list(
+                                set(
+                                    self.queues[
+                                        Queue.token_addresses_to_redo_accounting
+                                    ]
+                                )
+                            ),
+                        },
+                        upsert=True,
+                    )
+                    console.log(
+                        f"Added {len(self.queues[Queue.token_addresses_to_redo_accounting]):,.0f} token_addresses to redo accounting."
+                    )
+                    self.queues[Queue.token_addresses_to_redo_accounting] = []
                 # this will only be set if the above store methods do not fail.
 
                 # if update_:
@@ -1125,7 +1179,9 @@ class Heartbeat:
         while len(block_list) > 0:
             current_block_to_process: CCD_BlockInfo = block_list.pop(0)
             try:
-                self.add_block_and_txs_to_queue(current_block_to_process)
+                self.add_block_and_txs_to_queue(
+                    current_block_to_process, special_purpose
+                )
 
                 self.lookout_for_payday(current_block_to_process)
                 self.lookout_for_end_of_day(current_block_to_process)
@@ -1223,6 +1279,43 @@ class Heartbeat:
                         )
                     )
 
+            await asyncio.sleep(10)
+
+    async def get_redo_token_addresses(self):
+        """
+        This methods gets token_addresses that need to have their
+        token accounting redone.
+        """
+        while True:
+            result = self.db[Collections.helpers].find_one(
+                {"_id": "redo_token_addresses"}
+            )
+            if result:
+                for token_address in result["token_addresses"]:
+                    token_address_as_class = MongoTypeTokenAddress(
+                        **self.db[Collections.tokens_token_addresses].find_one(
+                            {"_id": token_address}
+                        )
+                    )
+
+                    # update the last_height_processed to -1, this will trigger
+                    # a redoof the token accounting.
+                    token_address_as_class.last_height_processed = -1
+
+                    # Write the token_address_as_class back to the collection.
+                    _ = self.db[Collections.tokens_token_addresses].bulk_write(
+                        [self.mongo_save_for_token_address(token_address_as_class)]
+                    )
+
+                _ = self.db[Collections.helpers].bulk_write(
+                    [
+                        ReplaceOne(
+                            {"_id": "redo_token_addresses"},
+                            replacement={"token_addresses": []},
+                            upsert=True,
+                        )
+                    ]
+                )
             await asyncio.sleep(10)
 
     async def get_finalized_blocks(self):
@@ -1333,6 +1426,66 @@ class Heartbeat:
 
             await asyncio.sleep(60)
 
+    def token_accounting_for_token_address(
+        self,
+        token_address: str,
+        log: MongoTypeLoggedEvent,
+        events_by_token_address: dict,
+        token_accounting_last_processed_block: int = -1,
+    ):
+        queue = []
+        # if we start at the beginning of the chain for token accounting
+        # create an empty token address as class to start
+        if token_accounting_last_processed_block == -1:
+            token_address_as_class = self.create_new_token_address(token_address)
+        else:
+            # Retrieve the token_address document from the collection
+            token_address_as_class = self.db[
+                Collections.tokens_token_addresses
+            ].find_one({"_id": token_address})
+
+            # If it's not there, create an new token_address
+            if not token_address_as_class:
+                token_address_as_class = self.create_new_token_address(token_address)
+            else:
+                # make sure the token_address_as_call is actually typed correctly.
+                token_address_as_class = MongoTypeTokenAddress(**token_address_as_class)
+
+        # This is the list of logged events for the selected token_address
+        logs_for_token_address = events_by_token_address[token_address]
+        for log in logs_for_token_address:
+            # Perform token accounting for this logged event
+            # This function works on and returns 'token_address_as_class'.
+            token_address_as_class = self.execute_logged_event(
+                token_address_as_class,
+                log,
+            )
+
+        # Set the last block_height that affected the token accounting
+        # for this token_address to the last logged event block_height.
+        token_address_as_class.last_height_processed = log.block_height
+
+        # Write the token_address_as_class back to the collection.
+        _ = self.db[Collections.tokens_token_addresses].bulk_write(
+            [self.mongo_save_for_token_address(token_address_as_class)]
+        )
+
+        # All logs for token_address are processed,
+        # now copy state from token holders to _accounts
+        queue = self.copy_token_holders_state_to_address_and_save(
+            token_address_as_class
+        )
+
+        # Only write to the collection if there are accounts that
+        # have been modified.
+        if len(queue) > 0:
+            try:
+                _ = self.db[Collections.tokens_accounts].bulk_write(queue)
+            except:
+                console.log(token_address_as_class)
+        else:
+            pass
+
     async def update_token_accounting(self):
         """
         This method takes logged events and processes them for
@@ -1403,66 +1556,12 @@ class Heartbeat:
 
                     # Looping through all token_addresses that have logged_events
                     for token_address in list(events_by_token_address.keys()):
-                        queue = []
-                        # if we start at the beginning of the chain for token accounting
-                        # create an empty token address as class to start
-                        if token_accounting_last_processed_block == -1:
-                            token_address_as_class = self.create_new_token_address(
-                                token_address
-                            )
-                        else:
-                            # Retrieve the token_address document from the collection
-                            token_address_as_class = self.db[
-                                Collections.tokens_token_addresses
-                            ].find_one({"_id": token_address})
-
-                            # If it's not there, create an new token_address
-                            if not token_address_as_class:
-                                token_address_as_class = self.create_new_token_address(
-                                    token_address
-                                )
-                            else:
-                                # make sure the token_address_as_call is actually typed correctly.
-                                token_address_as_class = MongoTypeTokenAddress(
-                                    **token_address_as_class
-                                )
-
-                        # This is the list of logged events for the selected token_address
-                        logs_for_token_address = events_by_token_address[token_address]
-                        for log in logs_for_token_address:
-                            # Perform token accounting for this logged event
-                            # This function works on and returns 'token_address_as_class'.
-                            token_address_as_class = self.execute_logged_event(
-                                token_address_as_class,
-                                log,
-                            )
-
-                        # Set the last block_height that affected the token accounting
-                        # for this token_address to the last logged event block_height.
-                        token_address_as_class.last_height_processed = log.block_height
-
-                        # Write the token_address_as_class back to the collection.
-                        _ = self.db[Collections.tokens_token_addresses].bulk_write(
-                            [self.mongo_save_for_token_address(token_address_as_class)]
+                        self.token_accounting_for_token_address(
+                            token_address,
+                            log,
+                            events_by_token_address,
+                            token_accounting_last_processed_block,
                         )
-
-                        # All logs for token_address are processed,
-                        # now copy state from token holders to _accounts
-                        queue = self.copy_token_holders_state_to_address_and_save(
-                            token_address_as_class
-                        )
-
-                        # Only write to the collection if there are accounts that
-                        # have been modified.
-                        if len(queue) > 0:
-                            try:
-                                _ = self.db[Collections.tokens_accounts].bulk_write(
-                                    queue
-                                )
-                            except:
-                                console.log(token_address_as_class)
-                        else:
-                            pass
 
                         # Finally, after all logged events are processed for all
                         # token addresses, write back to the helper collection
@@ -1471,6 +1570,72 @@ class Heartbeat:
                         self.log_last_token_accounted_message_in_mongo(
                             token_accounting_last_processed_block_when_done
                         )
+
+            except Exception as e:
+                console.log(e)
+
+            await asyncio.sleep(1)
+
+    async def special_purpose_token_accounting(self):
+        """
+        This method looks at all token_addresses and then inspects the
+        last_height_processed property. If it's set to -1, this means
+        we need to redo token accounting for this token_address.
+        It's set to -1 if a special purpose block with cis events is
+        detected.
+        """
+        while True:
+            try:
+                result = [
+                    MongoTypeTokenAddress(**x)
+                    for x in self.db[Collections.tokens_token_addresses].find(
+                        {"last_height_processed": -1}
+                    )
+                ]
+
+                token_addresses_to_process = [x.id for x in result]
+
+                # Logged events are ordered by block_height, then by
+                # transaction index (tx_index) and finally by event index
+                # (ordering).
+                for token_address in token_addresses_to_process:
+                    events_for_token_address = [
+                        MongoTypeLoggedEvent(**x)
+                        for x in self.db[Collections.tokens_logged_events]
+                        .find({"token_address": token_address})
+                        .sort(
+                            [
+                                ("block_height", ASCENDING),
+                                ("tx_index", ASCENDING),
+                                ("ordering", ASCENDING),
+                            ]
+                        )
+                    ]
+                    events_by_token_address = {}
+                    events_by_token_address[token_address] = events_for_token_address
+                    # Only continue if there are logged events to process...
+                    if len(events_for_token_address) > 0:
+                        # When all logged events are processed,
+                        # 'token_accounting_last_processed_block' is set to
+                        # 'token_accounting_last_processed_block_when_done'
+                        # such that next iteration, we will not be re-processing
+                        # logged events we already have processed.
+                        token_accounting_last_processed_block_when_done = max(
+                            [x.block_height for x in events_for_token_address]
+                        )
+
+                        console.log(
+                            f"Token accounting for Special purpose: Redo {token_address} with {len(events_for_token_address):,.0f} logged events on {self.net}."
+                        )
+
+                        # Looping through all token_addresses that have logged_events
+                        for log in events_for_token_address:
+                            self.token_accounting_for_token_address(
+                                token_address,
+                                log,
+                                events_by_token_address,
+                                -1,
+                            )
 
             except Exception as e:
                 console.log(e)
@@ -1739,6 +1904,10 @@ def main():
 
     loop.create_task(heartbeat.get_special_purpose_blocks())
     loop.create_task(heartbeat.process_special_purpose_blocks())
+
+    loop.create_task(heartbeat.get_redo_token_addresses())
+    loop.create_task(heartbeat.special_purpose_token_accounting())
+
     loop.create_task(heartbeat.update_nodes_from_dashboard())
     loop.run_forever()
 
