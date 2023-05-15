@@ -1297,7 +1297,6 @@ class Heartbeat:
                             {"_id": token_address}
                         )
                     )
-
                     # update the last_height_processed to -1, this will trigger
                     # a redoof the token accounting.
                     token_address_as_class.last_height_processed = -1
