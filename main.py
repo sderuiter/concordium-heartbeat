@@ -1392,6 +1392,7 @@ class Heartbeat:
                                 token_address
                             )   
 
+                        token_address_as_class = MongoTypeTokenAddress(**token_address_as_class)
                         logs_for_token_address = events_by_token_address[token_address]
                         for log in logs_for_token_address:
                             token_address_as_class = self.execute_logged_event(
