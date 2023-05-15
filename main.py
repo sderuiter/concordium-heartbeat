@@ -283,7 +283,7 @@ class Heartbeat:
         token_address_as_class.token_holders = token_holders
         return token_address_as_class
 
-    def create_new_token_address(self, token_address: str):
+    def create_new_token_address(self, token_address: str) -> MongoTypeTokenAddress:
         instance_address = token_address.split("-")[0]
         token_id = token_address.split("-")[1]
         token_address = MongoTypeTokenAddress(
@@ -1335,16 +1335,33 @@ class Heartbeat:
             await asyncio.sleep(60)
 
     async def update_token_accounting(self):
+        """
+        This method takes logged events and processes them for
+        token accounting.
+        The starting point is reading the helper document
+        'token_accounting_last_processed_block', if that is either
+        not there or set to -1, all token_addresses (and associated
+        token_accounts) will be reset.
+        """
         while True:
             try:
+                # Read token_accounting_last_processed_block
                 result = self.db[Collections.helpers].find_one(
                     {"_id": "token_accounting_last_processed_block"}
                 )
+                # If it's not set, set to -1, which leads to resetting
+                # all token addresses and accounts, basically starting
+                # over with token accounting.
                 if result:
                     token_accounting_last_processed_block = result["height"]
                 else:
                     token_accounting_last_processed_block = -1
 
+                # Query the logged events collection for all logged events
+                # after 'token_accounting_last_processed_block'.
+                # Logged events are ordered by block_height, then by
+                # transaction index (tx_index) and finally by event index
+                # (ordering).
                 result: list[MongoTypeLoggedEvent] = [
                     MongoTypeLoggedEvent(**x)
                     for x in self.db[Collections.tokens_logged_events]
@@ -1359,12 +1376,22 @@ class Heartbeat:
                         ]
                     )
                 ]
+
+                # Only continue if there are logged events to process...
                 if len(result) > 0:
+                    # When all logged events are processed,
+                    # 'token_accounting_last_processed_block' is set to
+                    # 'token_accounting_last_processed_block_when_done'
+                    # such that next iteration, we will not be re-processing
+                    # logged events we already have processed.
                     token_accounting_last_processed_block_when_done = max(
                         [x.block_height for x in result]
                     )
 
-                    events_by_token_address:dict[str, list] = {}
+                    # Dict 'events_by_token_address' is keyed on token_address
+                    # and contains an ordered list of logged events related to
+                    # this token_address.
+                    events_by_token_address: dict[str, list] = {}
                     for log in result:
                         events_by_token_address[
                             log.token_address
@@ -1374,6 +1401,8 @@ class Heartbeat:
                     console.log(
                         f"Token accounting: Starting at {(token_accounting_last_processed_block+1):,.0f}, I found {len(result):,.0f} logged events on {self.net} to process from {len(list(events_by_token_address.keys()))} token addresses."
                     )
+
+                    # Looping through all token_addresses that have logged_events
                     for token_address in list(events_by_token_address.keys()):
                         queue = []
                         # if we start at the beginning of the chain for token accounting
@@ -1383,32 +1412,49 @@ class Heartbeat:
                                 token_address
                             )
                         else:
+                            # Retrieve the token_address document from the collection
                             token_address_as_class = self.db[
                                 Collections.tokens_token_addresses
                             ].find_one({"_id": token_address})
 
+                            # If it's not there, create an new token_address
                             if not token_address_as_class:
                                 token_address_as_class = self.create_new_token_address(
-                                token_address
-                            )   
+                                    token_address
+                                )
+                            else:
+                                # make sure the token_address_as_call is actually typed correctly.
+                                token_address_as_class = MongoTypeTokenAddress(
+                                    **token_address_as_class
+                                )
 
-                        token_address_as_class = MongoTypeTokenAddress(**token_address_as_class)
+                        # This is the list of logged events for the selected token_address
                         logs_for_token_address = events_by_token_address[token_address]
                         for log in logs_for_token_address:
+                            # Perform token accounting for this logged event
+                            # This function works on and returns 'token_address_as_class'.
                             token_address_as_class = self.execute_logged_event(
                                 token_address_as_class,
                                 log,
                             )
 
+                        # Set the last block_height that affected the token accounting
+                        # for this token_address to the last logged event block_height.
                         token_address_as_class.last_height_processed = log.block_height
+
+                        # Write the token_address_as_class back to the collection.
                         _ = self.db[Collections.tokens_token_addresses].bulk_write(
                             [self.mongo_save_for_token_address(token_address_as_class)]
                         )
-                        # all logs for token_address are processed,
+
+                        # All logs for token_address are processed,
                         # now copy state from token holders to _accounts
                         queue = self.copy_token_holders_state_to_address_and_save(
                             token_address_as_class
                         )
+
+                        # Only write to the collection if there are accounts that
+                        # have been modified.
                         if len(queue) > 0:
                             try:
                                 _ = self.db[Collections.tokens_accounts].bulk_write(
@@ -1419,6 +1465,10 @@ class Heartbeat:
                         else:
                             pass
 
+                        # Finally, after all logged events are processed for all
+                        # token addresses, write back to the helper collection
+                        # the block_height (+1) where to start next iteration of
+                        # token accounting.
                         self.log_last_token_accounted_message_in_mongo(
                             token_accounting_last_processed_block_when_done
                         )
@@ -1541,6 +1591,14 @@ class Heartbeat:
             f"Reponse for index creation on collection '{collection.value}' for key '{key}': {response}."
         )
 
+    def create_compound_index(
+        self, collection: Collections, index_tuple: tuple, sparse=False
+    ):
+        response = self.db[collection].create_index([index_tuple], sparse=sparse)
+        print(
+            f"Reponse for index creation on collection '{collection.value}' for '{index_tuple}': {response}."
+        )
+
     def create_mongodb_indices(self):
         """
         If needed, we can use this method to re-create
@@ -1614,6 +1672,22 @@ class Heartbeat:
                     "account_transaction.effects.delegation_configured",
                     ASCENDING,
                     sparse=True,
+                )
+
+            if collection == Collections.tokens_token_addresses:
+                self.create_index(collection, "contract", ASCENDING)
+
+            if collection == Collections.tokens_logged_events:
+                self.create_index(collection, "block_height", ASCENDING)
+                self.create_index(collection, "token_address", ASCENDING)
+                self.create_index(collection, "contract", ASCENDING)
+                self.create_compound_index(
+                    collection,
+                    [
+                        ("block_height", ASCENDING),
+                        ("tx_index", ASCENDING),
+                        ("ordering", ASCENDING),
+                    ],
                 )
 
             if self.net == "mainnet":
