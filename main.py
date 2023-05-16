@@ -1236,8 +1236,6 @@ class Heartbeat:
                     self.queues[Queue.provenance_contracts_to_add] = []
                 # this will only be set if the above store methods do not fail.
 
-                # if update_:
-
             except Exception as e:
                 # pass
                 console.log(e)
