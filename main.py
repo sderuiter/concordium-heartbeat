@@ -59,6 +59,11 @@ class AccountTransactionOutcome(Enum):
     Failure = "failure"
 
 
+class ProvenanceMintAddress(Enum):
+    mainnet = "3suZfxcME62akyyss72hjNhkzXeZuyhoyQz1tvNSXY2yxvwo53"
+    testnet = "4AuT5RRmBwcdkLMA6iVjxTDb1FQmxwAh3wHBS22mggWL8xH6s3"
+
+
 class Queue(Enum):
     """
     Type of queue to store messages in to send to MongoDB.
@@ -77,6 +82,7 @@ class Queue(Enum):
     updated_modules = 7
     logged_events = 8
     token_addresses_to_redo_accounting = 9
+    provenance_contracts_to_add = 10
 
 
 class ClassificationResult:
@@ -351,6 +357,7 @@ class Heartbeat:
         ordering = 0
         logged_events = []
         token_addresses_to_redo_accounting = []
+        provenance_contracts_to_add = []
         if tx.account_transaction:
             if tx.account_transaction.effects.contract_initialized:
                 contract_index = (
@@ -376,7 +383,7 @@ class Heartbeat:
                         tx.account_transaction.effects.contract_initialized.events
                     ):
                         ordering += 1
-                        logged_event, token_address = cis.process_event(
+                        tag, logged_event, token_address = cis.process_event(
                             # cis,
                             self.db,
                             instance_address,
@@ -392,6 +399,13 @@ class Heartbeat:
 
                         if special_purpose:
                             token_addresses_to_redo_accounting.append(token_address)
+
+                        if (tag == 254) and (
+                            tx.account_transaction.sender
+                            == ProvenanceMintAddress[self.net].value
+                        ):
+                            contract_to_add = token_address.split("-")[0]
+                            provenance_contracts_to_add.append(contract_to_add)
 
             if tx.account_transaction.effects.contract_update_issued:
                 for effect_index, effect in enumerate(
@@ -429,6 +443,7 @@ class Heartbeat:
                                         ):
                                             ordering += 1
                                             (
+                                                tag,
                                                 logged_event,
                                                 token_address,
                                             ) = cis.process_event(
@@ -450,6 +465,16 @@ class Heartbeat:
                                                     token_address
                                                 )
 
+                                            if (tag == 254) and (
+                                                tx.account_transaction.sender
+                                                == ProvenanceMintAddress[self.net].value
+                                            ):
+                                                contract_to_add = token_address.split(
+                                                    "-"
+                                                )[0]
+                                                provenance_contracts_to_add.append(
+                                                    contract_to_add
+                                                )
                         if effect.updated:
                             contract_index = effect.updated.address.index
                             contract_subindex = effect.updated.address.subindex
@@ -470,7 +495,11 @@ class Heartbeat:
                             if supports_cis_1_2:
                                 for index, event in enumerate(effect.updated.events):
                                     ordering += 1
-                                    logged_event, token_address = cis.process_event(
+                                    (
+                                        tag,
+                                        logged_event,
+                                        token_address,
+                                    ) = cis.process_event(
                                         # cis,
                                         self.db,
                                         instance_address,
@@ -489,7 +518,20 @@ class Heartbeat:
                                             token_address
                                         )
 
-        return logged_events, token_addresses_to_redo_accounting
+                                    if (tag == 254) and (
+                                        tx.account_transaction.sender
+                                        == ProvenanceMintAddress[self.net].value
+                                    ):
+                                        contract_to_add = token_address.split("-")[0]
+                                        provenance_contracts_to_add.append(
+                                            contract_to_add
+                                        )
+
+        return (
+            logged_events,
+            token_addresses_to_redo_accounting,
+            provenance_contracts_to_add,
+        )
 
     def classify_transaction(self, tx: CCD_BlockItemSummary):
         """
@@ -690,13 +732,20 @@ class Heartbeat:
             (
                 logged_events,
                 token_addresses_to_redo_accounting,
+                provenance_contracts_to_add,
             ) = self.decode_cis_logged_events(tx, block_info, special_purpose)
+
             if len(logged_events) > 0:
                 self.queues[Queue.logged_events].extend(logged_events)
 
             if len(token_addresses_to_redo_accounting) > 0:
                 self.queues[Queue.token_addresses_to_redo_accounting].extend(
                     token_addresses_to_redo_accounting
+                )
+
+            if len(provenance_contracts_to_add) > 0:
+                self.queues[Queue.provenance_contracts_to_add].extend(
+                    provenance_contracts_to_add
                 )
 
             result = self.classify_transaction(tx)
@@ -1003,7 +1052,7 @@ class Heartbeat:
 
     def log_error_in_mongo(self, e, current_block_to_process: CCD_BlockInfo):
         query = {"_id": f"block_failure_{current_block_to_process.height}"}
-        mongodb.self.db[Collections.helpers].replace_one(
+        self.db[Collections.helpers].replace_one(
             query,
             {
                 "_id": f"block_failure_{current_block_to_process.height}",
@@ -1157,6 +1206,34 @@ class Heartbeat:
                         f"Added {len(self.queues[Queue.token_addresses_to_redo_accounting]):,.0f} token_addresses to redo accounting."
                     )
                     self.queues[Queue.token_addresses_to_redo_accounting] = []
+
+                if len(self.queues[Queue.provenance_contracts_to_add]) > 0:
+                    query = {"_id": "provenance"}
+                    current_content = self.db[Collections.tokens_tags].find_one(query)
+                    if not current_content:
+                        current_content = {
+                            "_id": "provenance",
+                            "contracts": [],
+                            "tag_template": True,
+                            "single_use_token": False,
+                        }
+                    current_contracts: list = current_content["contracts"]
+                    current_contracts.extend(
+                        list(set(self.queues[Queue.provenance_contracts_to_add]))
+                    )
+
+                    current_contracts = list(set(current_contracts))
+                    current_contracts.sort()
+                    current_content.update({"contracts": current_contracts})
+                    self.db[Collections.tokens_tags].replace_one(
+                        query,
+                        replacement=current_content,
+                        upsert=True,
+                    )
+                    console.log(
+                        f"Added {len(self.queues[Queue.provenance_contracts_to_add]):,.0f} contracts to provenance for {self.net}."
+                    )
+                    self.queues[Queue.provenance_contracts_to_add] = []
                 # this will only be set if the above store methods do not fail.
 
                 # if update_:
