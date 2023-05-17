@@ -447,7 +447,6 @@ class Heartbeat:
                                                 logged_event,
                                                 token_address,
                                             ) = cis.process_event(
-                                                # cis,
                                                 self.db,
                                                 instance_address,
                                                 event,
