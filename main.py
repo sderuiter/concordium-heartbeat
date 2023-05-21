@@ -358,173 +358,165 @@ class Heartbeat:
         logged_events = []
         token_addresses_to_redo_accounting = []
         provenance_contracts_to_add = []
-        if tx.account_transaction:
-            if tx.account_transaction.effects.contract_initialized:
-                contract_index = (
-                    tx.account_transaction.effects.contract_initialized.address.index
-                )
-                contract_subindex = (
-                    tx.account_transaction.effects.contract_initialized.address.subindex
-                )
-                instance_address = f"<{contract_index},{contract_subindex}>"
-                entrypoint = f"{tx.account_transaction.effects.contract_initialized.init_name[5:]}.supports"
-                cis = CIS(
-                    self.grpcclient,
-                    contract_index,
-                    contract_subindex,
-                    entrypoint,
-                    NET(self.net),
-                )
-                supports_cis_1_2 = cis.supports_standards(
-                    [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
-                )
-                if supports_cis_1_2:
-                    for index, event in enumerate(
-                        tx.account_transaction.effects.contract_initialized.events
-                    ):
-                        ordering += 1
-                        tag, logged_event, token_address = cis.process_event(
-                            # cis,
-                            self.db,
-                            instance_address,
-                            event,
-                            block_info.height,
-                            tx.hash,
-                            tx.index,
-                            ordering,
-                            f"initialized-{tx.index}-{index}",
-                        )
-                        if logged_event:
-                            logged_events.append(logged_event)
+        if not tx.account_transaction:
+            return (
+                logged_events,
+                token_addresses_to_redo_accounting,
+                provenance_contracts_to_add,
+            )
 
-                        if special_purpose:
-                            token_addresses_to_redo_accounting.append(token_address)
-
-                        if (tag == 254) and (
-                            tx.account_transaction.sender
-                            == ProvenanceMintAddress[self.net].value
-                        ):
-                            contract_to_add = token_address.split("-")[0]
-                            provenance_contracts_to_add.append(contract_to_add)
-
-            if tx.account_transaction.effects.contract_update_issued:
-                for effect_index, effect in enumerate(
-                    tx.account_transaction.effects.contract_update_issued.effects
+        if tx.account_transaction.effects.contract_initialized:
+            contract_index = (
+                tx.account_transaction.effects.contract_initialized.address.index
+            )
+            contract_subindex = (
+                tx.account_transaction.effects.contract_initialized.address.subindex
+            )
+            instance_address = f"<{contract_index},{contract_subindex}>"
+            entrypoint = f"{tx.account_transaction.effects.contract_initialized.init_name[5:]}.supports"
+            cis = CIS(
+                self.grpcclient,
+                contract_index,
+                contract_subindex,
+                entrypoint,
+                NET(self.net),
+            )
+            supports_cis_1_2 = cis.supports_standards(
+                [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
+            )
+            if supports_cis_1_2:
+                for index, event in enumerate(
+                    tx.account_transaction.effects.contract_initialized.events
                 ):
-                    if effect:
-                        if effect.interrupted:
-                            contract_index = effect.interrupted.address.index
-                            contract_subindex = effect.interrupted.address.subindex
-                            instance_address = f"<{contract_index},{contract_subindex}>"
-                            instance = MongoTypeInstance(
-                                **self.db[Collections.instances].find_one(
-                                    {"_id": instance_address}
+                    ordering += 1
+                    tag, logged_event, token_address = cis.process_event(
+                        # cis,
+                        self.db,
+                        instance_address,
+                        event,
+                        block_info.height,
+                        tx.hash,
+                        tx.index,
+                        ordering,
+                        f"initialized-{tx.index}-{index}",
+                    )
+                    if logged_event:
+                        logged_events.append(logged_event)
+
+                    if special_purpose:
+                        token_addresses_to_redo_accounting.append(token_address)
+
+                    if (tag == 254) and (
+                        tx.account_transaction.sender
+                        == ProvenanceMintAddress[self.net].value
+                    ):
+                        contract_to_add = token_address.split("-")[0]
+                        provenance_contracts_to_add.append(contract_to_add)
+
+        if tx.account_transaction.effects.contract_update_issued:
+            for effect_index, effect in enumerate(
+                tx.account_transaction.effects.contract_update_issued.effects
+            ):
+                if effect.interrupted:
+                    contract_index = effect.interrupted.address.index
+                    contract_subindex = effect.interrupted.address.subindex
+                    instance_address = f"<{contract_index},{contract_subindex}>"
+                    instance = MongoTypeInstance(
+                        **self.db[Collections.instances].find_one(
+                            {"_id": instance_address}
+                        )
+                    )
+                    if instance and instance.v1:
+                        entrypoint = instance.v1.name[5:] + ".supports"
+                        cis = CIS(
+                            self.grpcclient,
+                            contract_index,
+                            contract_subindex,
+                            entrypoint,
+                            NET(self.net),
+                        )
+                        supports_cis_1_2 = cis.supports_standards(
+                            [
+                                StandardIdentifiers.CIS_1,
+                                StandardIdentifiers.CIS_2,
+                            ]
+                        )
+                        if supports_cis_1_2:
+                            for index, event in enumerate(effect.interrupted.events):
+                                ordering += 1
+                                (
+                                    tag,
+                                    logged_event,
+                                    token_address,
+                                ) = cis.process_event(
+                                    self.db,
+                                    instance_address,
+                                    event,
+                                    block_info.height,
+                                    tx.hash,
+                                    tx.index,
+                                    ordering,
+                                    f"interrupted-{tx.index}-{effect_index}-{index}",
                                 )
-                            )
-                            if instance:
-                                if instance.v1:
-                                    entrypoint = instance.v1.name[5:] + ".supports"
-                                    cis = CIS(
-                                        self.grpcclient,
-                                        contract_index,
-                                        contract_subindex,
-                                        entrypoint,
-                                        NET(self.net),
+                                if logged_event:
+                                    logged_events.append(logged_event)
+
+                                if special_purpose:
+                                    token_addresses_to_redo_accounting.append(
+                                        token_address
                                     )
-                                    supports_cis_1_2 = cis.supports_standards(
-                                        [
-                                            StandardIdentifiers.CIS_1,
-                                            StandardIdentifiers.CIS_2,
-                                        ]
-                                    )
-                                    if supports_cis_1_2:
-                                        for index, event in enumerate(
-                                            effect.interrupted.events
-                                        ):
-                                            ordering += 1
-                                            (
-                                                tag,
-                                                logged_event,
-                                                token_address,
-                                            ) = cis.process_event(
-                                                self.db,
-                                                instance_address,
-                                                event,
-                                                block_info.height,
-                                                tx.hash,
-                                                tx.index,
-                                                ordering,
-                                                f"interrupted-{tx.index}-{effect_index}-{index}",
-                                            )
-                                            if logged_event:
-                                                logged_events.append(logged_event)
 
-                                            if special_purpose:
-                                                token_addresses_to_redo_accounting.append(
-                                                    token_address
-                                                )
-
-                                            if (tag == 254) and (
-                                                tx.account_transaction.sender
-                                                == ProvenanceMintAddress[self.net].value
-                                            ):
-                                                contract_to_add = token_address.split(
-                                                    "-"
-                                                )[0]
-                                                provenance_contracts_to_add.append(
-                                                    contract_to_add
-                                                )
-                        if effect.updated:
-                            contract_index = effect.updated.address.index
-                            contract_subindex = effect.updated.address.subindex
-                            instance_address = f"<{contract_index},{contract_subindex}>"
-                            entrypoint = (
-                                f"{effect.updated.receive_name.split('.')[0]}.supports"
+                                if (tag == 254) and (
+                                    tx.account_transaction.sender
+                                    == ProvenanceMintAddress[self.net].value
+                                ):
+                                    contract_to_add = token_address.split("-")[0]
+                                    provenance_contracts_to_add.append(contract_to_add)
+                if effect.updated:
+                    contract_index = effect.updated.address.index
+                    contract_subindex = effect.updated.address.subindex
+                    instance_address = f"<{contract_index},{contract_subindex}>"
+                    entrypoint = f"{effect.updated.receive_name.split('.')[0]}.supports"
+                    cis = CIS(
+                        self.grpcclient,
+                        contract_index,
+                        contract_subindex,
+                        entrypoint,
+                        NET(self.net),
+                    )
+                    supports_cis_1_2 = cis.supports_standards(
+                        [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
+                    )
+                    if supports_cis_1_2:
+                        for index, event in enumerate(effect.updated.events):
+                            ordering += 1
+                            (
+                                tag,
+                                logged_event,
+                                token_address,
+                            ) = cis.process_event(
+                                # cis,
+                                self.db,
+                                instance_address,
+                                event,
+                                block_info.height,
+                                tx.hash,
+                                tx.index,
+                                ordering,
+                                f"updated-{tx.index}-{effect_index}-{index}",
                             )
-                            cis = CIS(
-                                self.grpcclient,
-                                contract_index,
-                                contract_subindex,
-                                entrypoint,
-                                NET(self.net),
-                            )
-                            supports_cis_1_2 = cis.supports_standards(
-                                [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
-                            )
-                            if supports_cis_1_2:
-                                for index, event in enumerate(effect.updated.events):
-                                    ordering += 1
-                                    (
-                                        tag,
-                                        logged_event,
-                                        token_address,
-                                    ) = cis.process_event(
-                                        # cis,
-                                        self.db,
-                                        instance_address,
-                                        event,
-                                        block_info.height,
-                                        tx.hash,
-                                        tx.index,
-                                        ordering,
-                                        f"updated-{tx.index}-{effect_index}-{index}",
-                                    )
-                                    if logged_event:
-                                        logged_events.append(logged_event)
+                            if logged_event:
+                                logged_events.append(logged_event)
 
-                                    if special_purpose:
-                                        token_addresses_to_redo_accounting.append(
-                                            token_address
-                                        )
+                            if special_purpose:
+                                token_addresses_to_redo_accounting.append(token_address)
 
-                                    if (tag == 254) and (
-                                        tx.account_transaction.sender
-                                        == ProvenanceMintAddress[self.net].value
-                                    ):
-                                        contract_to_add = token_address.split("-")[0]
-                                        provenance_contracts_to_add.append(
-                                            contract_to_add
-                                        )
+                            if (tag == 254) and (
+                                tx.account_transaction.sender
+                                == ProvenanceMintAddress[self.net].value
+                            ):
+                                contract_to_add = token_address.split("-")[0]
+                                provenance_contracts_to_add.append(contract_to_add)
 
         return (
             logged_events,
@@ -725,8 +717,6 @@ class Heartbeat:
         Given a list of transactions, apply rules to determine which index needs to be updated.
         Add this to a to_be_sent_to_mongo list and do insert_many.
         """
-        # console.log (f"Generating indices for {len(transactions):,.0f} transactions...")
-
         for tx in transactions:
             (
                 logged_events,
