@@ -5,7 +5,7 @@ import datetime as dt
 from sharingiscaring.GRPCClient.CCD_Types import *
 from sharingiscaring.GRPCClient.types_pb2 import Empty
 from sharingiscaring.tooter import Tooter, TooterChannel, TooterType
-from sharingiscaring.mongodb import MongoDB, Collections, MongoTypeInstance
+from sharingiscaring.mongodb import MongoDB, Collections, MongoTypeInstance, MongoMotor
 from sharingiscaring.enums import NET
 from sharingiscaring.node import ConcordiumNodeFromDashboard
 from sharingiscaring.cis import (
@@ -47,8 +47,13 @@ tooter: Tooter = Tooter(
 mongodb = MongoDB(
     {
         "MONGODB_PASSWORD": MONGODB_PASSWORD,
-        "MONGO_IP": MONGO_IP,
-        "MONGO_PORT": MONGO_PORT,
+    },
+    tooter,
+)
+
+motormongo = MongoMotor(
+    {
+        "MONGODB_PASSWORD": MONGODB_PASSWORD,
     },
     tooter,
 )
@@ -109,14 +114,23 @@ class ClassificationResult:
 
 class Heartbeat:
     def __init__(
-        self, grpcclient: GRPCClient, tooter: Tooter, mongodb: MongoDB, net: str
+        self,
+        grpcclient: GRPCClient,
+        tooter: Tooter,
+        mongodb: MongoDB,
+        motormongo: MongoMotor,
+        net: str,
     ):
         self.grpcclient = grpcclient
         self.tooter = tooter
         self.mongodb = mongodb
+        self.motormongo = motormongo
         self.net = net
         self.db: Dict[Collections, Collection] = (
             self.mongodb.mainnet if self.net == "mainnet" else self.mongodb.testnet
+        )
+        self.motordb: Dict[Collections, Collection] = (
+            self.motormongo.testnet if net == "testnet" else self.motormongo.mainnet
         )
         self.finalized_block_infos_to_process: list[CCD_BlockInfo] = []
         self.special_purpose_block_infos_to_process: list[CCD_BlockInfo] = []
@@ -1489,6 +1503,50 @@ class Heartbeat:
 
             await asyncio.sleep(60)
 
+    async def update_involved_accounts_all_top_list(self):
+        while True:
+            try:
+                pipeline = [
+                    {"$group": {"_id": "$sender_canonical", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                ]
+                result = (
+                    await self.motordb[Collections.involved_accounts_all]
+                    .aggregate(pipeline)
+                    .to_list(50)
+                )
+
+                local_queue = []
+                for r in result:
+                    local_queue.append(ReplaceOne({"_id": r["_id"]}, r, upsert=True))
+
+                _ = self.db[Collections.involved_accounts_all_top_list].delete_many({})
+                _ = self.db[Collections.involved_accounts_all_top_list].bulk_write(
+                    local_queue
+                )
+
+                # update top_list status retrieval
+                query = {
+                    "_id": "heartbeat_last_timestamp_involved_accounts_all_top_list"
+                }
+                self.db[Collections.helpers].replace_one(
+                    query,
+                    {
+                        "_id": "heartbeat_last_timestamp_involved_accounts_all_top_list",
+                        "timestamp": dt.datetime.utcnow(),
+                    },
+                    upsert=True,
+                )
+
+            except Exception as e:
+                self.tooter.send(
+                    channel=TooterChannel.NOTIFIER,
+                    message=f"Failed to get involved_accounts_all_top_list. Error: {e}",
+                    notifier_type=TooterType.REQUESTS_ERROR,
+                )
+
+            await asyncio.sleep(3 * 60)
+
     def token_accounting_for_token_address(
         self,
         token_address: str,
@@ -1950,7 +2008,7 @@ def main():
     console.log(f"{RUN_ON_NET=}")
     grpcclient = GRPCClient()
 
-    heartbeat = Heartbeat(grpcclient, tooter, mongodb, RUN_ON_NET)
+    heartbeat = Heartbeat(grpcclient, tooter, mongodb, motormongo, RUN_ON_NET)
 
     # these to helper methods are not needed, only things
     # go really wrong...
@@ -1972,6 +2030,7 @@ def main():
     loop.create_task(heartbeat.special_purpose_token_accounting())
 
     loop.create_task(heartbeat.update_nodes_from_dashboard())
+    loop.create_task(heartbeat.update_involved_accounts_all_top_list())
     loop.run_forever()
 
 
