@@ -1137,6 +1137,7 @@ class Heartbeat:
                         f"A:  {len(self.queues[Queue.involved_all]):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
                     )
                     self.queues[Queue.involved_all] = []
+
                 if len(self.queues[Queue.involved_transfer]) > 0:
                     result = self.db[Collections.involved_accounts_transfer].bulk_write(
                         self.queues[Queue.involved_transfer]
