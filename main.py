@@ -19,8 +19,6 @@ from sharingiscaring.cis import (
     transferEvent,
     burnEvent,
     tokenMetadataEvent,
-    nonceEvent,
-    updateOperatorEvent,
 )
 import sharingiscaring.GRPCClient.wadze as wadze
 from pymongo.collection import Collection
