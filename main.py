@@ -660,7 +660,6 @@ class Heartbeat:
         return dct
 
     def get_module_metadata(self, block_hash: str, module_ref: str) -> Dict[str, str]:
-        # console.log(f"{module_ref=}")
         ms = self.grpcclient.get_module_source(module_ref, block_hash, NET(self.net))
 
         if ms.v0:
