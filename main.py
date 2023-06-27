@@ -1,5 +1,6 @@
 import asyncio
 from sharingiscaring.GRPCClient import GRPCClient
+from pymongo import monitoring, errors
 from rich import print
 import datetime as dt
 from sharingiscaring.GRPCClient.CCD_Types import *
@@ -215,6 +216,39 @@ class Heartbeat:
             address_to_save.tokens[token_address_as_class.id] = token_to_save
 
             _queue.append(self.mongo_save_for_address(address_to_save))
+
+        return _queue
+
+    def update_accounts_for_zero_amounts(
+        self,
+        token_holders_before_executing_logged_events: list[CCD_Address],
+        token_address_as_class: MongoTypeTokenAddress,
+    ):
+        _queue = []
+
+        # token_holders according to the token_address (this
+        # was just updated, so correct.) We need to compare this with
+        # token_holders_before_executing_logged_events.
+        token_holders_from_address = token_address_as_class.token_holders.keys()
+
+        token_holders_zero_amounts = list(
+            set(token_holders_before_executing_logged_events)
+            - set(token_holders_from_address)
+        )
+
+        for address in token_holders_zero_amounts:
+            address_to_save = self.db[Collections.tokens_accounts].find_one(
+                {"_id": address}
+            )
+            if not address_to_save:
+                # this should not be possible...
+                pass
+            else:
+                address_to_save = MongoTypeTokenHolderAddress(**address_to_save)
+                # delete this token from the tokens_list
+                del address_to_save.tokens[token_address_as_class.id]
+
+                _queue.append(self.mongo_save_for_address(address_to_save))
 
         return _queue
 
@@ -1094,10 +1128,10 @@ class Heartbeat:
         while True:
             try:
                 if len(self.queues[Queue.blocks]) > 0:
-                    update_ = True
-                    heartbeat_last_processed_block = CCD_BlockInfo(
-                        **self.queues[Queue.blocks][-1]._doc
-                    )
+                    # update_ = True
+                    # heartbeat_last_processed_block = CCD_BlockInfo(
+                    #     **self.queues[Queue.blocks][-1]._doc
+                    # )
                     result = self.db[Collections.blocks].bulk_write(
                         self.queues[Queue.blocks]
                     )
@@ -1374,7 +1408,7 @@ class Heartbeat:
                         )
                     )
                     # update the last_height_processed to -1, this will trigger
-                    # a redoof the token accounting.
+                    # a redo of the token accounting.
                     token_address_as_class.last_height_processed = -1
 
                     # Write the token_address_as_class back to the collection.
@@ -1474,6 +1508,10 @@ class Heartbeat:
                             d = node.dict()
                             d["_id"] = node.nodeId
 
+                            for k, v in d.items():
+                                if type(v) == int:
+                                    d[k] = str(v)
+
                             queue.append(
                                 ReplaceOne({"_id": node.nodeId}, d, upsert=True)
                             )
@@ -1570,6 +1608,10 @@ class Heartbeat:
                 # make sure the token_address_as_call is actually typed correctly.
                 token_address_as_class = MongoTypeTokenAddress(**token_address_as_class)
 
+        token_holders_before_executing_logged_events = (
+            token_address_as_class.token_holders.keys()
+        )
+
         # This is the list of logged events for the selected token_address
         logs_for_token_address = events_by_token_address[token_address]
         for log in logs_for_token_address:
@@ -1595,11 +1637,22 @@ class Heartbeat:
             token_address_as_class
         )
 
+        # Perform a last check if there are accounts that no longer
+        # have this token. They need to have this token removed from
+        # their tokens_account document.
+        queue_zero = self.update_accounts_for_zero_amounts(
+            token_holders_before_executing_logged_events, token_address_as_class
+        )
+
+        if len(queue_zero) > 0:
+            queue.extend(queue_zero)
+
         # Only write to the collection if there are accounts that
         # have been modified.
         if len(queue) > 0:
             try:
                 _ = self.db[Collections.tokens_accounts].bulk_write(queue)
+                console.log(f"Updated token accounting for {len(queue)} accounts.")
             except:
                 console.log(token_address_as_class)
         else:
@@ -1684,7 +1737,7 @@ class Heartbeat:
 
                         # Finally, after all logged events are processed for all
                         # token addresses, write back to the helper collection
-                        # the block_height (+1) where to start next iteration of
+                        # the block_height where to start next iteration of
                         # token accounting.
                         self.log_last_token_accounted_message_in_mongo(
                             token_accounting_last_processed_block_when_done
