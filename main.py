@@ -3,6 +3,7 @@ from sharingiscaring.GRPCClient import GRPCClient
 from pymongo import monitoring, errors
 from rich import print
 import datetime as dt
+import copy
 from sharingiscaring.GRPCClient.CCD_Types import *
 from sharingiscaring.GRPCClient.types_pb2 import Empty
 from sharingiscaring.tooter import Tooter, TooterChannel, TooterType
@@ -246,7 +247,10 @@ class Heartbeat:
             else:
                 address_to_save = MongoTypeTokenHolderAddress(**address_to_save)
                 # delete this token from the tokens_list
-                del address_to_save.tokens[token_address_as_class.id]
+                try:
+                    del address_to_save.tokens[token_address_as_class.id]
+                except KeyError:
+                    pass
 
                 _queue.append(self.mongo_save_for_address(address_to_save))
 
@@ -295,8 +299,8 @@ class Heartbeat:
             token_holders[result.from_address] = str(
                 int(token_holders.get(result.from_address, "0")) - result.token_amount
             )
-            if int(token_holders[result.from_address]) == 0:
-                del token_holders[result.from_address]
+            # if int(token_holders[result.from_address]) == 0:
+            #     del token_holders[result.from_address]
 
         except:
             if result.token_amount > 0:
@@ -318,8 +322,8 @@ class Heartbeat:
             token_holders[result.from_address] = str(
                 int(token_holders.get(result.from_address, "0")) - result.token_amount
             )
-            if int(token_holders[result.from_address]) == 0:
-                del token_holders[result.from_address]
+            # if int(token_holders[result.from_address]) == 0:
+            #     del token_holders[result.from_address]
 
             token_address_as_class.token_amount = str(
                 (int(token_address_as_class.token_amount) - result.token_amount)
@@ -1586,7 +1590,6 @@ class Heartbeat:
     def token_accounting_for_token_address(
         self,
         token_address: str,
-        log: MongoTypeLoggedEvent,
         events_by_token_address: dict,
         token_accounting_last_processed_block: int = -1,
     ):
@@ -1595,6 +1598,10 @@ class Heartbeat:
         # create an empty token address as class to start
         if token_accounting_last_processed_block == -1:
             token_address_as_class = self.create_new_token_address(token_address)
+            # token_holders_before_executing_logged_events = [
+            #     x["_id"] for x in self.db[Collections.tokens_accounts].find()
+            # ]
+
         else:
             # Retrieve the token_address document from the collection
             token_address_as_class = self.db[
@@ -1608,9 +1615,9 @@ class Heartbeat:
                 # make sure the token_address_as_call is actually typed correctly.
                 token_address_as_class = MongoTypeTokenAddress(**token_address_as_class)
 
-        token_holders_before_executing_logged_events = (
-            token_address_as_class.token_holders.keys()
-        )
+            # token_holders_before_executing_logged_events = list(
+            #     token_address_as_class.token_holders.keys()
+            # ).copy()
 
         # This is the list of logged events for the selected token_address
         logs_for_token_address = events_by_token_address[token_address]
@@ -1640,12 +1647,12 @@ class Heartbeat:
         # Perform a last check if there are accounts that no longer
         # have this token. They need to have this token removed from
         # their tokens_account document.
-        queue_zero = self.update_accounts_for_zero_amounts(
-            token_holders_before_executing_logged_events, token_address_as_class
-        )
+        # queue_zero = self.update_accounts_for_zero_amounts(
+        #     token_holders_before_executing_logged_events, token_address_as_class
+        # )
 
-        if len(queue_zero) > 0:
-            queue.extend(queue_zero)
+        # if len(queue_zero) > 0:
+        #     queue.extend(queue_zero)
 
         # Only write to the collection if there are accounts that
         # have been modified.
@@ -1730,7 +1737,6 @@ class Heartbeat:
                     for token_address in list(events_by_token_address.keys()):
                         self.token_accounting_for_token_address(
                             token_address,
-                            log,
                             events_by_token_address,
                             token_accounting_last_processed_block,
                         )
@@ -1801,18 +1807,17 @@ class Heartbeat:
                         )
 
                         # Looping through all token_addresses that have logged_events
-                        for log in events_for_token_address:
-                            self.token_accounting_for_token_address(
-                                token_address,
-                                log,
-                                events_by_token_address,
-                                -1,
-                            )
+                        # for log in events_for_token_address:
+                        self.token_accounting_for_token_address(
+                            token_address,
+                            events_by_token_address,
+                            -1,
+                        )
 
             except Exception as e:
                 console.log(e)
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(10)
 
     def add_end_of_day_to_queue(
         self, date_string: str, start_block: CCD_BlockInfo, end_block: CCD_BlockInfo
