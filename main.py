@@ -7,7 +7,13 @@ import copy
 from sharingiscaring.GRPCClient.CCD_Types import *
 from sharingiscaring.GRPCClient.types_pb2 import Empty
 from sharingiscaring.tooter import Tooter, TooterChannel, TooterType
-from sharingiscaring.mongodb import MongoDB, Collections, MongoTypeInstance, MongoMotor
+from sharingiscaring.mongodb import (
+    MongoDB,
+    Collections,
+    MongoTypeInstance,
+    MongoMotor,
+    CollectionsUtilities,
+)
 from sharingiscaring.enums import NET
 from sharingiscaring.node import ConcordiumNodeFromDashboard
 from sharingiscaring.cis import (
@@ -1543,6 +1549,61 @@ class Heartbeat:
 
             await asyncio.sleep(60)
 
+    async def update_exchange_rates_for_tokens(self):
+        if self.net == "testnet":
+            pass
+        else:
+            while True:
+                try:
+                    token_list = [
+                        x["_id"].replace("w", "")
+                        for x in self.db[Collections.tokens_tags].find(
+                            {"owner": "Arabella"}
+                        )
+                    ]
+                    exchange_rate_dict = {}
+                    queue = []
+                    headers = {
+                        "X-CoinAPI-Key": COIN_API_KEY,
+                    }
+                    for token in token_list:
+                        async with aiohttp.ClientSession(headers=headers) as session:
+                            url = f"https://rest.coinapi.io/v1/exchangerate/{token}/USD"
+                            async with session.get(url) as resp:
+                                exchange_rate_dict[token] = await resp.json()
+
+                                queue.append(
+                                    ReplaceOne(
+                                        {"_id": f"{token}/USD"},
+                                        exchange_rate_dict[token],
+                                        upsert=True,
+                                    )
+                                )
+
+                            _ = self.mongodb.utilities[
+                                CollectionsUtilities.exchange_rates
+                            ].bulk_write(queue)
+
+                            # update exchange rates retrieval
+                            query = {"_id": "heartbeat_last_timestamp_exchange_rates"}
+                            self.db[Collections.helpers].replace_one(
+                                query,
+                                {
+                                    "_id": "heartbeat_last_timestamp_exchange_rates",
+                                    "timestamp": dt.datetime.utcnow(),
+                                },
+                                upsert=True,
+                            )
+
+                except Exception as e:
+                    self.tooter.send(
+                        channel=TooterChannel.NOTIFIER,
+                        message=f"Failed to get exchange rates. Error: {e}",
+                        notifier_type=TooterType.REQUESTS_ERROR,
+                    )
+
+                await asyncio.sleep(60 * 60 * 4)
+
     async def update_involved_accounts_all_top_list(self):
         while True:
             try:
@@ -2087,6 +2148,8 @@ def main():
 
     loop.create_task(heartbeat.update_nodes_from_dashboard())
     loop.create_task(heartbeat.update_involved_accounts_all_top_list())
+
+    loop.create_task(heartbeat.update_exchange_rates_for_tokens())
     loop.run_forever()
 
 
