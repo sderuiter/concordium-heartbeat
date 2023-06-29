@@ -3,6 +3,8 @@ from sharingiscaring.GRPCClient import GRPCClient
 from pymongo import monitoring, errors
 from rich import print
 import datetime as dt
+from datetime import timezone
+import dateutil
 import copy
 from sharingiscaring.GRPCClient.CCD_Types import *
 from sharingiscaring.GRPCClient.types_pb2 import Empty
@@ -1549,6 +1551,66 @@ class Heartbeat:
 
             await asyncio.sleep(60)
 
+    async def coinapi(self, token):
+        headers = {
+            "X-CoinAPI-Key": COIN_API_KEY,
+        }
+        async with aiohttp.ClientSession(headers=headers) as session:
+            url = f"https://rest.coinapi.io/v1/exchangerate/{token}/USD"
+            async with session.get(url) as resp:
+                if resp.ok:
+                    result = await resp.json()
+                    return_dict = {
+                        "_id": f"USD/{token}",
+                        "token": token,
+                        "timestamp": dateutil.parser.parse(result["time"]),
+                        "rate": result["rate"],
+                        "source": "CoinAPI",
+                    }
+                else:
+                    return_dict = None
+
+        return return_dict
+
+    async def coingecko(self, token):
+        token_translation_dict = {
+            "CCD": "concordium",
+            "ETH": "ethereum",
+            "USDC": "usd-coin",
+            "USDT": "tether",
+            "BTC": "bitcoin",
+            "UNI": "unicorn-token",
+            "LINK": "chainlink",
+            "MANA": "decentraland",
+            "AAVE": "aave",
+            "DAI": "dai",
+            "BUSD": "binance-usd",
+            "VNXAU": "vnx-gold",
+            "DOGE": "dogecoin",
+            "SHIB": "shiba-inu",
+        }
+        token_to_request = token_translation_dict[token]
+
+        async with aiohttp.ClientSession() as session:
+            url = f"https://api.coingecko.com/api/v3/simple/price?ids={token_to_request}&vs_currencies=usd&include_last_updated_at=true"
+            async with session.get(url) as resp:
+                if resp.ok:
+                    result = await resp.json()
+                    result = result[token_to_request]
+                    return_dict = {
+                        "_id": f"USD/{token}",
+                        "token": token,
+                        "timestamp": dt.datetime.fromtimestamp(
+                            result["last_updated_at"], tz=timezone.utc
+                        ),
+                        "rate": result["usd"],
+                        "source": "CoinGecko",
+                    }
+                else:
+                    return_dict = None
+
+        return return_dict
+
     async def update_exchange_rates_for_tokens(self):
         if self.net == "testnet":
             pass
@@ -1561,39 +1623,35 @@ class Heartbeat:
                             {"owner": "Arabella"}
                         )
                     ]
-                    exchange_rate_dict = {}
                     queue = []
-                    headers = {
-                        "X-CoinAPI-Key": COIN_API_KEY,
-                    }
                     for token in token_list:
-                        async with aiohttp.ClientSession(headers=headers) as session:
-                            url = f"https://rest.coinapi.io/v1/exchangerate/{token}/USD"
-                            async with session.get(url) as resp:
-                                exchange_rate_dict[token] = await resp.json()
-
-                                queue.append(
-                                    ReplaceOne(
-                                        {"_id": f"{token}/USD"},
-                                        exchange_rate_dict[token],
-                                        upsert=True,
-                                    )
+                        result = await self.coinapi(token)
+                        if not result:
+                            result = await self.coingecko(token)
+                        if result:
+                            queue.append(
+                                ReplaceOne(
+                                    {"_id": f"USD/{token}"},
+                                    result,
+                                    upsert=True,
                                 )
-
-                            _ = self.mongodb.utilities[
-                                CollectionsUtilities.exchange_rates
-                            ].bulk_write(queue)
-
-                            # update exchange rates retrieval
-                            query = {"_id": "heartbeat_last_timestamp_exchange_rates"}
-                            self.db[Collections.helpers].replace_one(
-                                query,
-                                {
-                                    "_id": "heartbeat_last_timestamp_exchange_rates",
-                                    "timestamp": dt.datetime.utcnow(),
-                                },
-                                upsert=True,
                             )
+
+                    if len(queue) > 0:
+                        _ = self.mongodb.utilities[
+                            CollectionsUtilities.exchange_rates
+                        ].bulk_write(queue)
+
+                        # update exchange rates retrieval
+                        query = {"_id": "heartbeat_last_timestamp_exchange_rates"}
+                        self.db[Collections.helpers].replace_one(
+                            query,
+                            {
+                                "_id": "heartbeat_last_timestamp_exchange_rates",
+                                "timestamp": dt.datetime.utcnow(),
+                            },
+                            upsert=True,
+                        )
 
                 except Exception as e:
                     self.tooter.send(
