@@ -1660,7 +1660,7 @@ class Heartbeat:
                         notifier_type=TooterType.REQUESTS_ERROR,
                     )
 
-                await asyncio.sleep(60 * 60 * 4)
+                await asyncio.sleep(60 * 5)
 
     async def update_involved_accounts_all_top_list(self):
         while True:
