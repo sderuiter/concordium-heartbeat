@@ -1684,14 +1684,14 @@ class Heartbeat:
             "SHIB": "shiba-inu",
         }
         token_to_request = token_translation_dict[token]
-
+        return_list_for_token = []
         async with aiohttp.ClientSession() as session:
             url = f"https://api.coingecko.com/api/v3/coins/{token_to_request}/market_chart?vs_currency=usd&days=max&interval=daily&precision=full"
             async with session.get(url) as resp:
                 if resp.ok:
                     result = await resp.json()
                     result = result["prices"]
-                    return_list_for_token = []
+
                     for timestamp, price in result:
                         formatted_date = f"{dt.datetime.fromtimestamp(timestamp/1000, tz=timezone.utc):%Y-%m-%d}"
                         return_dict = {
