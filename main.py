@@ -2313,6 +2313,7 @@ def main():
 
     loop.create_task(heartbeat.update_exchange_rates_for_tokens())
     loop.create_task(heartbeat.update_exchange_rates_historical_for_tokens())
+
     loop.run_forever()
 
 
