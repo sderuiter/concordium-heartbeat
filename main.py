@@ -432,13 +432,7 @@ class Heartbeat:
             )
             instance_address = f"<{contract_index},{contract_subindex}>"
             entrypoint = f"{tx.account_transaction.effects.contract_initialized.init_name[5:]}.supports"
-            cis = CIS(
-                self.grpcclient,
-                contract_index,
-                contract_subindex,
-                entrypoint,
-                NET(self.net),
-            )
+            cis = self.init_cis(contract_index, contract_subindex, entrypoint)
             supports_cis_1_2 = cis.supports_standards(
                 [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
             )
@@ -486,12 +480,8 @@ class Heartbeat:
                     )
                     if instance and instance.v1:
                         entrypoint = instance.v1.name[5:] + ".supports"
-                        cis = CIS(
-                            self.grpcclient,
-                            contract_index,
-                            contract_subindex,
-                            entrypoint,
-                            NET(self.net),
+                        cis = self.init_cis(
+                            contract_index, contract_subindex, entrypoint
                         )
                         supports_cis_1_2 = cis.supports_standards(
                             [
@@ -581,6 +571,17 @@ class Heartbeat:
             token_addresses_to_redo_accounting,
             provenance_contracts_to_add,
         )
+
+    def init_cis(self, contract_index, contract_subindex, entrypoint):
+        cis = CIS(
+            self.grpcclient,
+            contract_index,
+            contract_subindex,
+            entrypoint,
+            NET(self.net),
+        )
+
+        return cis
 
     def classify_transaction(self, tx: CCD_BlockItemSummary):
         """
@@ -1662,6 +1663,109 @@ class Heartbeat:
 
                 await asyncio.sleep(60 * 5)
 
+    async def coingecko_historical(self, token: str):
+        """
+        This is the implementation of the CoinGecko historical API.
+        """
+        token_translation_dict = {
+            "CCD": "concordium",
+            "ETH": "ethereum",
+            "USDC": "usd-coin",
+            "USDT": "tether",
+            "BTC": "bitcoin",
+            "UNI": "unicorn-token",
+            "LINK": "chainlink",
+            "MANA": "decentraland",
+            "AAVE": "aave",
+            "DAI": "dai",
+            "BUSD": "binance-usd",
+            "VNXAU": "vnx-gold",
+            "DOGE": "dogecoin",
+            "SHIB": "shiba-inu",
+        }
+        token_to_request = token_translation_dict[token]
+
+        async with aiohttp.ClientSession() as session:
+            url = f"https://api.coingecko.com/api/v3/coins/{token_to_request}/market_chart?vs_currency=usd&days=max&interval=daily&precision=full"
+            async with session.get(url) as resp:
+                if resp.ok:
+                    result = await resp.json()
+                    result = result["prices"]
+                    return_list_for_token = []
+                    for timestamp, price in result:
+                        formatted_date = f"{dt.datetime.fromtimestamp(timestamp/1000, tz=timezone.utc):%Y-%m-%d}"
+                        return_dict = {
+                            "_id": f"USD/{token}-{formatted_date}",
+                            "token": token,
+                            "timestamp": timestamp,
+                            "date": formatted_date,
+                            "rate": price,
+                            "source": "CoinGecko",
+                        }
+                        return_list_for_token.append(
+                            ReplaceOne(
+                                {"_id": f"USD/{token}-{formatted_date}"},
+                                return_dict,
+                                upsert=True,
+                            )
+                        )
+
+                else:
+                    return_dict = None
+
+        return return_list_for_token
+
+    async def update_exchange_rates_historical_for_tokens(self):
+        if self.net == "testnet":
+            pass
+        else:
+            while True:
+                try:
+                    token_list = [
+                        x["_id"].replace("w", "")
+                        for x in self.db[Collections.tokens_tags].find(
+                            {"owner": "Arabella"}
+                        )
+                    ]
+                    queue = []
+                    for token in token_list:
+                        queue = await self.coingecko_historical(token)
+
+                        if len(queue) > 0:
+                            _ = self.mongodb.utilities[
+                                CollectionsUtilities.exchange_rates_historical
+                            ].bulk_write(queue)
+
+                            # update exchange rates retrieval
+                            query = {
+                                "_id": "heartbeat_last_timestamp_exchange_rates_historical"
+                            }
+                            self.db[Collections.helpers].replace_one(
+                                query,
+                                {
+                                    "_id": "heartbeat_last_timestamp_exchange_rates_historical",
+                                    "timestamp": dt.datetime.utcnow(),
+                                },
+                                upsert=True,
+                            )
+
+                except Exception as e:
+                    self.tooter.send(
+                        channel=TooterChannel.NOTIFIER,
+                        message=f"Failed to get exchange rates historical. Error: {e}",
+                        notifier_type=TooterType.REQUESTS_ERROR,
+                    )
+
+                eod_timeframe_start = dt.time(0, 1, 0)
+                eod_timeframe_end = dt.time(1, 0, 0)
+
+                if (dt.time() > eod_timeframe_start) and (
+                    dt.time() < eod_timeframe_end
+                ):
+                    await asyncio.sleep(60 * 5)
+                else:
+                    await asyncio.sleep(60 * 60 * 4)
+
     async def update_involved_accounts_all_top_list(self):
         while True:
             try:
@@ -2208,6 +2312,7 @@ def main():
     loop.create_task(heartbeat.update_involved_accounts_all_top_list())
 
     loop.create_task(heartbeat.update_exchange_rates_for_tokens())
+    loop.create_task(heartbeat.update_exchange_rates_historical_for_tokens())
     loop.run_forever()
 
 
