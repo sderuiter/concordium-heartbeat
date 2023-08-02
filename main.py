@@ -2300,6 +2300,7 @@ def main():
     loop.create_task(heartbeat.get_finalized_blocks())
     loop.create_task(heartbeat.process_blocks())
     loop.create_task(heartbeat.send_to_mongo())
+
     loop.create_task(heartbeat.update_token_accounting())
 
     loop.create_task(heartbeat.get_special_purpose_blocks())
