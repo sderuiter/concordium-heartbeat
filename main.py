@@ -473,11 +473,14 @@ class Heartbeat:
                     contract_index = effect.interrupted.address.index
                     contract_subindex = effect.interrupted.address.subindex
                     instance_address = f"<{contract_index},{contract_subindex}>"
-                    instance = MongoTypeInstance(
-                        **self.db[Collections.instances].find_one(
-                            {"_id": instance_address}
+                    try:
+                        instance = MongoTypeInstance(
+                            **self.db[Collections.instances].find_one(
+                                {"_id": instance_address}
+                            )
                         )
-                    )
+                    except:
+                        instance = None
                     if instance and instance.v1:
                         entrypoint = instance.v1.name[5:] + ".supports"
                         cis = self.init_cis(
