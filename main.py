@@ -394,9 +394,9 @@ class Heartbeat:
                 memo = bytes.decode(value, encoding_guess["encoding"])
                 return memo
             except:
-                return value
+                return hex
         else:
-            return value
+            return hex
 
     def decode_cis_logged_events(
         self,
@@ -613,7 +613,7 @@ class Heartbeat:
                     result.amount = ac.amount
                     result.receiver = ac.receiver
                     if ac.memo:
-                        result.memo = self.decode_memo(ac.memo)
+                        result.memo = ac.memo
 
                 elif effects.transferred_with_schedule:
                     result.accounts_involved_transfer = True
@@ -624,7 +624,7 @@ class Heartbeat:
                     )
                     result.receiver = ts.receiver
                     if ts.memo:
-                        result.memo = self.decode_memo(ts.memo)
+                        result.memo = ts.memo
 
                 elif effects.contract_initialized:
                     result.contracts_involved = True
