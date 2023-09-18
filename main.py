@@ -2,6 +2,7 @@ import asyncio
 from sharingiscaring.GRPCClient import GRPCClient
 from pymongo import monitoring, errors
 from rich import print
+from rich.progress import track
 import datetime as dt
 from datetime import timezone
 import dateutil
@@ -384,19 +385,19 @@ class Heartbeat:
             sum += release.amount
         return sum
 
-    def decode_memo(self, hex):
-        bs = io.BytesIO(bytes.fromhex(hex))
-        n = int.from_bytes(bs.read(1), byteorder="little")
-        value = bs.read()
-        encoding_guess = chardet.detect(value)
-        if encoding_guess["encoding"] and encoding_guess["confidence"] > 0.75:
-            try:
-                memo = bytes.decode(value, encoding_guess["encoding"])
-                return memo
-            except:
-                return hex
-        else:
-            return hex
+    # def decode_memo(self, hex):
+    #     bs = io.BytesIO(bytes.fromhex(hex))
+    #     n = int.from_bytes(bs.read(1), byteorder="little")
+    #     value = bs.read()
+    #     encoding_guess = chardet.detect(value)
+    #     if encoding_guess["encoding"] and encoding_guess["confidence"] > 0.75:
+    #         try:
+    #             memo = bytes.decode(value, encoding_guess["encoding"])
+    #             return memo
+    #         except:
+    #             return hex
+    #     else:
+    #         return hex
 
     def decode_cis_logged_events(
         self,
@@ -1136,6 +1137,17 @@ class Heartbeat:
             upsert=True,
         )
 
+    def log_last_heartbeat_memo_to_hashes_in_mongo(self, height: int):
+        query = {"_id": "heartbeat_memos_last_processed_block"}
+        self.db[Collections.helpers].replace_one(
+            query,
+            {
+                "_id": "heartbeat_memos_last_processed_block",
+                "height": height,
+            },
+            upsert=True,
+        )
+
     async def send_to_mongo(self):
         """
         This method takes all queues with mongoDB messages and sends them to the
@@ -1769,6 +1781,102 @@ class Heartbeat:
                 else:
                     await asyncio.sleep(60 * 60 * 4)
 
+    def decode_memo(self, hex):
+        # bs = bytes.fromhex(hex)
+        # return bytes.decode(bs[1:], 'UTF-8')
+        try:
+            bs = io.BytesIO(bytes.fromhex(hex))
+            value = bs.read()
+
+            encoding_guess = chardet.detect(value)
+            if encoding_guess["confidence"] < 0.1:
+                encoding_guess = chardet.detect(value[2:])
+                value = value[2:]
+
+            if encoding_guess["encoding"] and encoding_guess["confidence"] > 0.5:
+                try:
+                    memo = bytes.decode(value, encoding_guess["encoding"])
+
+                    # memo = bytes.decode(value, "UTF-8")
+                    return False, memo[1:]
+                except UnicodeDecodeError:
+                    memo = bytes.decode(value[1:], "UTF-8")
+                    return False, memo[1:]
+            else:
+                return True, "Decoding failure..."
+        except:
+            return True, "Decoding failure..."
+
+    async def update_memos_to_hashes(self):
+        while True:
+            self.db[Collections.memos_to_hashes].delete_many({})
+            # Read heartbeat_memos_last_processed_block
+            result = self.db[Collections.helpers].find_one(
+                {"_id": "heartbeat_memos_last_processed_block"}
+            )
+            # If it's not set, set to -1, which leads to resetting
+            # memo search.
+            if result:
+                heartbeat_memos_last_processed_block = result["height"]
+            else:
+                heartbeat_memos_last_processed_block = -1
+
+            pipeline = [
+                {
+                    "$match": {
+                        "block_height": {"$gt": heartbeat_memos_last_processed_block}
+                    }
+                },
+                {"$match": {"memo": {"$exists": True}}},
+                {"$project": {"memo": 1, "block_height": 1, "_id": 1}},
+            ]
+            result = self.db[Collections.involved_accounts_transfer].aggregate(pipeline)
+
+            data = list(result)
+            memos: list(dict) = []
+            max_block_height = 0
+            if len(data) > 0:
+                for x in track(data):
+                    max_block_height = max(max_block_height, x["block_height"])
+                    hex_to_decode = x["memo"]
+
+                    decode_error, decoded_memo = self.decode_memo(hex_to_decode)
+                    if not decode_error:
+                        decoded_memo = decoded_memo.encode("ascii", "ignore")
+                        decoded_memo = decoded_memo.decode()
+                        memos.append({"memo": decoded_memo.lower(), "hash": x["_id"]})
+
+                if len(memos) > 0:
+                    # only if there are new memos to add to the list, should we read in
+                    # the collection again, otherwise it's a waste of resources.
+                    set_memos = {
+                        x["_id"]: x["tx_hashes"]
+                        for x in self.db[Collections.memos_to_hashes].find({})
+                    }
+                    old_len_set_memos = len(set_memos)
+                    for memo in memos:
+                        current_list_of_tx_hashes = set_memos.get(memo["memo"], [])
+                        current_list_of_tx_hashes.append(memo["hash"])
+                        set_memos[memo["memo"]] = list(set(current_list_of_tx_hashes))
+
+                    self.transfer_memos = set_memos
+
+                    set_list = []
+                    for memo_key, tx_hashes in set_memos.items():
+                        set_list.append({"_id": memo_key, "tx_hashes": tx_hashes})
+
+                    self.db[Collections.memos_to_hashes].insert_many(set_list)
+                    self.log_last_heartbeat_memo_to_hashes_in_mongo(max_block_height)
+                    console.log(
+                        f"Updated memos to hashes. Last block height processed: {max_block_height:,.0f}. Now storing {len(set_list):,.0f} keys."
+                    )
+                    if len(set_list) > old_len_set_memos:
+                        console.log(
+                            f"Added {(len(set_list) - old_len_set_memos):,.0f} keys in this run."
+                        )
+
+            await asyncio.sleep(60 * 5)
+
     async def update_involved_accounts_all_top_list(self):
         while True:
             try:
@@ -2318,6 +2426,7 @@ def main():
     loop.create_task(heartbeat.update_exchange_rates_for_tokens())
     loop.create_task(heartbeat.update_exchange_rates_historical_for_tokens())
 
+    loop.create_task(heartbeat.update_memos_to_hashes())
     loop.run_forever()
 
 
