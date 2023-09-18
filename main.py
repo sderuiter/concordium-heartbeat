@@ -1809,7 +1809,7 @@ class Heartbeat:
 
     async def update_memos_to_hashes(self):
         while True:
-            self.db[Collections.memos_to_hashes].delete_many({})
+            # self.db[Collections.memos_to_hashes].delete_many({})
             # Read heartbeat_memos_last_processed_block
             result = self.db[Collections.helpers].find_one(
                 {"_id": "heartbeat_memos_last_processed_block"}
