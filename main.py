@@ -1861,7 +1861,7 @@ class Heartbeat:
                         x["_id"]: x["tx_hashes"]
                         for x in self.db[Collections.memos_to_hashes].find({})
                     }
-                    old_len_set_memos = len(set_memos)
+                    # old_len_set_memos = len(set_memos)
                     for memo in memos:
                         current_list_of_tx_hashes_for_memo = set_memos.get(
                             memo["memo"], None
@@ -1905,11 +1905,16 @@ class Heartbeat:
 
                     self.db[Collections.memos_to_hashes].bulk_write(queue)
                     self.log_last_heartbeat_memo_to_hashes_in_mongo(max_block_height)
-                    console.log(
-                        f"Updated memos to hashes. Last block height processed: {max_block_height:,.0f}."
-                    )
-                    console.log(
-                        f"Added {len(new_memos):,.0f} key(s) in this run and updated {len(updated_memos):,.0f} key(s)."
+                    # console.log(
+                    #     f"Updated memos to hashes. Last block height processed: {max_block_height:,.0f}."
+                    # )
+                    # console.log(
+                    #     f"Added {len(new_memos):,.0f} key(s) in this run and updated {len(updated_memos):,.0f} key(s)."
+                    # )
+                    self.tooter.send(
+                        channel=TooterChannel.NOTIFIER,
+                        message=f"Updated memos to hashes. Last block height processed: {max_block_height:,.0f}.\nAdded {len(new_memos):,.0f} key(s) in this run and updated {len(updated_memos):,.0f} key(s).",
+                        notifier_type=TooterType.INFO,
                     )
 
             await asyncio.sleep(60 * 5)
