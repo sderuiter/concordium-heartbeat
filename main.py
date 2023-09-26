@@ -1038,8 +1038,8 @@ class Heartbeat:
                 )
 
     def lookout_for_payday(self, current_block_to_process: CCD_BlockInfo):
-        payday_timeframe_start = dt.time(7, 55, 0)
-        payday_timeframe_end = dt.time(8, 10, 0)
+        payday_timeframe_start = dt.time(8, 55, 0)
+        payday_timeframe_end = dt.time(9, 10, 0)
 
         if (current_block_to_process.slot_time.time() > payday_timeframe_start) and (
             current_block_to_process.slot_time.time() < payday_timeframe_end
