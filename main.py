@@ -23,6 +23,7 @@ from sharingiscaring.cis import (
     CIS,
     StandardIdentifiers,
     MongoTypeTokenAddress,
+    MongoTypeTokensTag,
     MongoTypeLoggedEvent,
     MongoTypeTokenHolderAddress,
     MongoTypeTokenForAddress,
@@ -2195,6 +2196,17 @@ class Heartbeat:
 
             await asyncio.sleep(10)
 
+    async def get_domain_name_from_metadata(self, dom: MongoTypeTokenAddress):
+        async with aiohttp.ClientSession() as session:
+            url = f"{dom.metadata_url}"
+            async with session.get(url) as resp:
+                t = await resp.json()
+                # print(t)
+                try:
+                    return t["name"]
+                except:
+                    return None
+
     async def web23_domain_name_metadata(self):
         """
         This method looks into the token_addresses collection specifically for
@@ -2211,54 +2223,49 @@ class Heartbeat:
         """
         while True:
             try:
-                query = {"contract": "<9377,0>"}
-                current_content = [
-                    MongoTypeTokenAddress(**x)
-                    for x in self.db[Collections.tokens_token_addresses].find(query)
-                ]
+                ccd_token_tags = self.db[Collections.tokens_tags].find_one(
+                    {"_id": ".ccd"}
+                )
+
+                if ccd_token_tags:
+                    contracts_in_ccd_token_tag = MongoTypeTokensTag(
+                        **ccd_token_tags
+                    ).contracts
+                    query = {"contract": {"$in": contracts_in_ccd_token_tag}}
+
+                    current_content = [
+                        MongoTypeTokenAddress(**x)
+                        for x in self.db[Collections.tokens_token_addresses].find(query)
+                    ]
+                else:
+                    current_content = []
+
                 for dom in current_content:
-                    if not dom.metadata_url:
-                        async with aiohttp.ClientSession() as session:
-                            url = f"https://wallet-proxy.mainnet.concordium.software/v0/CIS2TokenMetadata/9377/0?tokenId={dom.token_id}"
-                            async with session.get(url) as resp:
-                                t = await resp.json()
-                                # print(t)
-                                try:
-                                    metadataURL = t["metadata"][0]["metadataURL"]
-                                    query = {"_id": f"<9377,0>-{dom.token_id}"}
-                                    dom.metadata_url = metadataURL
-                                    dom_dict = dom.dict()
-                                    if "id" in dom_dict:
-                                        del dom_dict["id"]
-                                    self.db[
-                                        Collections.tokens_token_addresses
-                                    ].replace_one(
-                                        query,
-                                        replacement=dom_dict,
-                                        upsert=True,
-                                    )
+                    if dom.metadata_url and dom.domain_name:
+                        continue
 
-                                    # now go into the metadataURL to retrieve the domain name.
-                                    async with aiohttp.ClientSession() as session:
-                                        url = f"{dom.metadata_url}"
-                                        async with session.get(url) as resp:
-                                            t = await resp.json()
-                                            # print(t)
-                                            try:
-                                                domain_name = t["name"]
-                                                query = {"_id": f"{dom.token_id}"}
-                                                self.db[
-                                                    Collections.web23_ccd_domains
-                                                ].replace_one(
-                                                    query,
-                                                    replacement={"name": domain_name},
-                                                    upsert=True,
-                                                )
-                                            except:
-                                                pass
-
-                                except:
-                                    pass
+                    contract_index = CCD_ContractAddress.from_str(dom.contract).index
+                    async with aiohttp.ClientSession() as session:
+                        url = f"https://wallet-proxy.mainnet.concordium.software/v0/CIS2TokenMetadata/{contract_index}/0?tokenId={dom.token_id}"
+                        async with session.get(url) as resp:
+                            t = await resp.json()
+                            try:
+                                metadataURL = t["metadata"][0]["metadataURL"]
+                                query = {"_id": f"{dom.contract}-{dom.token_id}"}
+                                dom.metadata_url = metadataURL
+                                dom.domain_name = (
+                                    await self.get_domain_name_from_metadata(dom)
+                                )
+                                dom_dict = dom.dict()
+                                if "id" in dom_dict:
+                                    del dom_dict["id"]
+                                self.db[Collections.tokens_token_addresses].replace_one(
+                                    query,
+                                    replacement=dom_dict,
+                                    upsert=True,
+                                )
+                            except:
+                                pass
 
             except Exception as e:
                 console.log(e)
@@ -2537,9 +2544,11 @@ def main():
 
     loop.create_task(heartbeat.update_exchange_rates_for_tokens())
     loop.create_task(heartbeat.update_exchange_rates_historical_for_tokens())
-    loop.create_task(heartbeat.web23_domain_name_metadata())
 
     loop.create_task(heartbeat.update_memos_to_hashes())
+
+    loop.create_task(heartbeat.web23_domain_name_metadata())
+
     loop.run_forever()
 
 
