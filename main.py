@@ -24,6 +24,7 @@ from sharingiscaring.cis import (
     StandardIdentifiers,
     MongoTypeTokenAddress,
     MongoTypeTokensTag,
+    TokenMetaData,
     MongoTypeLoggedEvent,
     MongoTypeTokenHolderAddress,
     MongoTypeTokenForAddress,
@@ -39,7 +40,6 @@ from pymongo import ASCENDING, DESCENDING
 from pymongo import ReplaceOne
 import aiohttp
 import json
-import requests
 from typing import Dict
 from env import *
 from datetime import timedelta
@@ -282,11 +282,38 @@ class Heartbeat:
         token_address_as_class.token_holders = token_holders
         return token_address_as_class
 
+    async def read_and_store_metadata(
+        self, token_address_as_class: MongoTypeTokenAddress
+    ):
+        timeout = aiohttp.ClientTimeout(total=1)
+        with aiohttp.ClientSession(timeout=timeout) as session:
+            url = token_address_as_class.metadata_url
+            try:
+                with session.get(url) as resp:
+                    try:
+                        metadata = TokenMetaData(**resp.json())
+                        # print(metadata)
+
+                    except Exception as e:
+                        metadata = None
+                    token_address_as_class.token_metadata = metadata
+                    dom_dict = token_address_as_class.dict()
+                    if "id" in dom_dict:
+                        del dom_dict["id"]
+                    self.db[Collections.tokens_token_addresses].replace_one(
+                        {"_id": token_address_as_class.id},
+                        replacement=dom_dict,
+                        upsert=True,
+                    )
+            except asyncio.TimeoutError:
+                print(f"timeout error on {url}")
+
     def save_metadata(
         self, token_address_as_class: MongoTypeTokenAddress, log: MongoTypeLoggedEvent
     ):
         result = tokenMetadataEvent(**log.result)
         token_address_as_class.metadata_url = result.metadata.url
+        self.read_and_store_metadata(token_address_as_class)
         return token_address_as_class
 
     def save_transfer(
