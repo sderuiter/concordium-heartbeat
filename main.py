@@ -3,6 +3,7 @@ from sharingiscaring.GRPCClient import GRPCClient
 from pymongo import monitoring, errors
 from rich import print
 from rich.progress import track
+import requests
 import datetime as dt
 from datetime import timezone
 import dateutil
@@ -282,31 +283,29 @@ class Heartbeat:
         token_address_as_class.token_holders = token_holders
         return token_address_as_class
 
-    async def read_and_store_metadata(
-        self, token_address_as_class: MongoTypeTokenAddress
-    ):
-        timeout = aiohttp.ClientTimeout(total=1)
-        with aiohttp.ClientSession(timeout=timeout) as session:
-            url = token_address_as_class.metadata_url
-            try:
-                with session.get(url) as resp:
-                    try:
-                        metadata = TokenMetaData(**resp.json())
-                        # print(metadata)
+    def read_and_store_metadata(self, token_address_as_class: MongoTypeTokenAddress):
+        timeout = 1  # sec
 
-                    except Exception as e:
-                        metadata = None
-                    token_address_as_class.token_metadata = metadata
-                    dom_dict = token_address_as_class.dict()
-                    if "id" in dom_dict:
-                        del dom_dict["id"]
-                    self.db[Collections.tokens_token_addresses].replace_one(
-                        {"_id": token_address_as_class.id},
-                        replacement=dom_dict,
-                        upsert=True,
-                    )
-            except asyncio.TimeoutError:
-                print(f"timeout error on {url}")
+        url = token_address_as_class.metadata_url
+        try:
+            r = requests.get(url=url, verify=False, timeout=timeout)
+            metadata = None
+            if r.status_code == 200:
+                try:
+                    metadata = TokenMetaData(**r.json())
+                except Exception as e:
+                    pass
+                token_address_as_class.token_metadata = metadata
+                dom_dict = token_address_as_class.dict()
+                if "id" in dom_dict:
+                    del dom_dict["id"]
+                self.db[Collections.tokens_token_addresses].replace_one(
+                    {"_id": token_address_as_class.id},
+                    replacement=dom_dict,
+                    upsert=True,
+                )
+        except Exception as e:
+            pass
 
     def save_metadata(
         self, token_address_as_class: MongoTypeTokenAddress, log: MongoTypeLoggedEvent
@@ -2268,31 +2267,9 @@ class Heartbeat:
                     current_content = []
 
                 for dom in current_content:
-                    if dom.metadata_url and dom.domain_name:
+                    if dom.token_metadata:
                         continue
-
-                    contract_index = CCD_ContractAddress.from_str(dom.contract).index
-                    async with aiohttp.ClientSession() as session:
-                        url = f"https://wallet-proxy.mainnet.concordium.software/v0/CIS2TokenMetadata/{contract_index}/0?tokenId={dom.token_id}"
-                        async with session.get(url) as resp:
-                            t = await resp.json()
-                            try:
-                                metadataURL = t["metadata"][0]["metadataURL"]
-                                query = {"_id": f"{dom.contract}-{dom.token_id}"}
-                                dom.metadata_url = metadataURL
-                                dom.domain_name = (
-                                    await self.get_domain_name_from_metadata(dom)
-                                )
-                                dom_dict = dom.dict()
-                                if "id" in dom_dict:
-                                    del dom_dict["id"]
-                                self.db[Collections.tokens_token_addresses].replace_one(
-                                    query,
-                                    replacement=dom_dict,
-                                    upsert=True,
-                                )
-                            except:
-                                pass
+                    self.read_and_store_metadata(dom)
 
             except Exception as e:
                 console.log(e)
