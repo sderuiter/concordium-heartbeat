@@ -2276,6 +2276,26 @@ class Heartbeat:
 
             await asyncio.sleep(59)
 
+    async def read_token_metadata_if_not_present(self):
+        """ """
+        while True:
+            try:
+                current_content = [
+                    MongoTypeTokenAddress(**x)
+                    for x in self.db[Collections.tokens_token_addresses].find({})
+                ]
+
+                for dom in current_content:
+                    if dom.token_metadata:
+                        continue
+                    print(dom.contract, dom.token_id)
+                    self.read_and_store_metadata(dom)
+
+            except Exception as e:
+                console.log(e)
+
+            await asyncio.sleep(500)
+
     def add_end_of_day_to_queue(
         self, date_string: str, start_block: CCD_BlockInfo, end_block: CCD_BlockInfo
     ):
@@ -2552,6 +2572,7 @@ def main():
     loop.create_task(heartbeat.update_memos_to_hashes())
 
     loop.create_task(heartbeat.web23_domain_name_metadata())
+    loop.create_task(heartbeat.read_token_metadata_if_not_present())
 
     loop.run_forever()
 
