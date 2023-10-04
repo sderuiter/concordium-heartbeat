@@ -48,6 +48,9 @@ import io
 import time
 from rich.console import Console
 import chardet
+import urllib3
+
+urllib3.disable_warnings()
 
 console = Console()
 from copy import copy
@@ -284,7 +287,7 @@ class Heartbeat:
         return token_address_as_class
 
     def read_and_store_metadata(self, token_address_as_class: MongoTypeTokenAddress):
-        timeout = 1  # sec
+        timeout = 2  # sec
 
         url = token_address_as_class.metadata_url
         try:
@@ -2269,7 +2272,28 @@ class Heartbeat:
                 for dom in current_content:
                     if dom.token_metadata:
                         continue
-                    self.read_and_store_metadata(dom)
+                    contract_index = CCD_ContractAddress.from_str(dom.contract).index
+                    url_to_fetch_metadata = f"https://wallet-proxy.mainnet.concordium.software/v0/CIS2TokenMetadata/{contract_index}/0?tokenId={dom.token_id}"
+                    timeout = 1  # sec
+                    print(url_to_fetch_metadata)
+                    try:
+                        r = requests.get(
+                            url=url_to_fetch_metadata, verify=False, timeout=timeout
+                        )
+                        dom.metadata_url = None
+                        if r.status_code == 200:
+                            try:
+                                token_metadata = r.json()
+                                if "metadata" in token_metadata:
+                                    if "metadataURL" in token_metadata["metadata"][0]:
+                                        dom.metadata_url = token_metadata["metadata"][
+                                            0
+                                        ]["metadataURL"]
+                                        self.read_and_store_metadata(dom)
+                            except Exception as e:
+                                dom.metadata_url = None
+                    except:
+                        pass
 
             except Exception as e:
                 console.log(e)
