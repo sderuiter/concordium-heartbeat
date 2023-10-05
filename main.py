@@ -18,6 +18,7 @@ from sharingiscaring.mongodb import (
     MongoMotor,
     CollectionsUtilities,
 )
+from itertools import chain
 from sharingiscaring.enums import NET
 from sharingiscaring.node import ConcordiumNodeFromDashboard
 from sharingiscaring.cis import (
@@ -2350,12 +2351,25 @@ class Heartbeat:
             await asyncio.sleep(59)
 
     async def read_token_metadata_if_not_present(self):
-        """ """
+        """
+        We only try to read metadata for recognized tokens.
+        Too much noise and unreliable urls otherwise.
+        """
         while True:
             try:
+                token_tags = self.db[Collections.tokens_tags].find({})
+
+                recognized_contracts = [
+                    MongoTypeTokensTag(**x).contracts for x in token_tags
+                ]
+
+                query = {
+                    "contract": {"$in": list(chain.from_iterable(recognized_contracts))}
+                }
+
                 current_content = [
                     MongoTypeTokenAddress(**x)
-                    for x in self.db[Collections.tokens_token_addresses].find({})
+                    for x in self.db[Collections.tokens_token_addresses].find(query)
                 ]
 
                 for dom in current_content:
