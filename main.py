@@ -300,7 +300,7 @@ class Heartbeat:
                 print(token_address_as_class.failed_attempt)
                 if (
                     dt.datetime.now(tz=timezone.utc)
-                    < token_address_as_class.failed_attempt.do_not_try_before
+                    < token_address_as_class.failed_attempt.do_not_try_before.astimezone(timezone.utc)
                 ):
                     do_request = False
             if do_request:
