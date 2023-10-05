@@ -2325,7 +2325,10 @@ class Heartbeat:
                     if dom.token_metadata:
                         continue
                     contract_index = CCD_ContractAddress.from_str(dom.contract).index
-                    url_to_fetch_metadata = f"https://wallet-proxy.mainnet.concordium.software/v0/CIS2TokenMetadata/{contract_index}/0?tokenId={dom.token_id}"
+                    if self.net == "testnet":
+                        url_to_fetch_metadata = f"https://wallet-proxy.testnet.concordium.com/v0/CIS2TokenMetadata/{contract_index}/0?tokenId={dom.token_id}"
+                    else:
+                        url_to_fetch_metadata = f"https://wallet-proxy.mainnet.concordium.software/v0/CIS2TokenMetadata/{contract_index}/0?tokenId={dom.token_id}"
                     timeout = 1  # sec
                     print(url_to_fetch_metadata)
                     try:
