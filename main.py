@@ -297,12 +297,17 @@ class Heartbeat:
             do_request = url is not None
             if token_address_as_class.failed_attempt:
                 timeout = 2
-                print(token_address_as_class.failed_attempt)
-                if (
-                    dt.datetime.now(tz=timezone.utc)
-                    < token_address_as_class.failed_attempt.do_not_try_before.astimezone(timezone.utc)
+
+                if dt.datetime.now(
+                    tz=timezone.utc
+                ) < token_address_as_class.failed_attempt.do_not_try_before.astimezone(
+                    timezone.utc
                 ):
                     do_request = False
+                else:
+                    print(
+                        f"Trying{token_address_as_class.token_id} now: Current FA: {token_address_as_class.failed_attempt} "
+                    )
             if do_request:
                 r = requests.get(url=url, verify=False, timeout=timeout)
 
