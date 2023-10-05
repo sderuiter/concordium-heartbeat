@@ -28,6 +28,7 @@ from sharingiscaring.cis import (
     TokenMetaData,
     MongoTypeLoggedEvent,
     MongoTypeTokenHolderAddress,
+    FailedAttempt,
     MongoTypeTokenForAddress,
     mintEvent,
     transferEvent,
@@ -287,28 +288,71 @@ class Heartbeat:
         return token_address_as_class
 
     def read_and_store_metadata(self, token_address_as_class: MongoTypeTokenAddress):
-        timeout = 2  # sec
+        timeout = 1  # sec
 
         url = token_address_as_class.metadata_url
+        error = None
+
         try:
-            r = requests.get(url=url, verify=False, timeout=timeout)
-            metadata = None
-            if r.status_code == 200:
-                try:
-                    metadata = TokenMetaData(**r.json())
-                except Exception as e:
-                    pass
-                token_address_as_class.token_metadata = metadata
-                dom_dict = token_address_as_class.dict()
-                if "id" in dom_dict:
-                    del dom_dict["id"]
-                self.db[Collections.tokens_token_addresses].replace_one(
-                    {"_id": token_address_as_class.id},
-                    replacement=dom_dict,
-                    upsert=True,
-                )
+            do_request = url is not None
+            if token_address_as_class.failed_attempt:
+                timeout = 2
+                print(token_address_as_class.failed_attempt)
+                if (
+                    dt.datetime.now(tz=timezone.utc)
+                    < token_address_as_class.failed_attempt.do_not_try_before
+                ):
+                    do_request = False
+            if do_request:
+                r = requests.get(url=url, verify=False, timeout=timeout)
+
+                metadata = None
+                if r.status_code == 200:
+                    try:
+                        metadata = TokenMetaData(**r.json())
+                        token_address_as_class.token_metadata = metadata
+                        token_address_as_class.failed_attempt = None
+                        dom_dict = token_address_as_class.dict(exclude_none=True)
+                        if "id" in dom_dict:
+                            del dom_dict["id"]
+                        self.db[Collections.tokens_token_addresses].replace_one(
+                            {"_id": token_address_as_class.id},
+                            replacement=dom_dict,
+                            upsert=True,
+                        )
+                    except Exception as e:
+                        error = str(e)
+
         except Exception as e:
-            pass
+            error = str(e)
+
+        if error:
+            failed_attempt = token_address_as_class.failed_attempt
+            if not failed_attempt:
+                failed_attempt = FailedAttempt(
+                    **{
+                        "attempts": 1,
+                        "do_not_try_before": dt.datetime.now(tz=timezone.utc)
+                        + dt.timedelta(hours=2),
+                        "last_error": error,
+                    }
+                )
+            else:
+                failed_attempt.attempts += 1
+                failed_attempt.do_not_try_before = dt.datetime.now(
+                    tz=timezone.utc
+                ) + dt.timedelta(hours=failed_attempt.attempts)
+                failed_attempt.last_error = error
+
+            token_address_as_class.failed_attempt = failed_attempt
+            dom_dict = token_address_as_class.dict(exclude_none=True)
+            if "id" in dom_dict:
+                del dom_dict["id"]
+            self.db[Collections.tokens_token_addresses].replace_one(
+                {"_id": token_address_as_class.id},
+                replacement=dom_dict,
+                upsert=True,
+            )
 
     def save_metadata(
         self, token_address_as_class: MongoTypeTokenAddress, log: MongoTypeLoggedEvent
@@ -2316,7 +2360,7 @@ class Heartbeat:
                     self.read_and_store_metadata(dom)
 
             except Exception as e:
-                console.log(e)
+                pass
 
             await asyncio.sleep(500)
 
@@ -2575,27 +2619,27 @@ def main():
 
     loop = asyncio.get_event_loop()
 
-    loop.create_task(heartbeat.get_finalized_blocks())
-    loop.create_task(heartbeat.process_blocks())
-    loop.create_task(heartbeat.send_to_mongo())
+    # loop.create_task(heartbeat.get_finalized_blocks())
+    # loop.create_task(heartbeat.process_blocks())
+    # loop.create_task(heartbeat.send_to_mongo())
 
-    loop.create_task(heartbeat.update_token_accounting())
+    # loop.create_task(heartbeat.update_token_accounting())
 
-    loop.create_task(heartbeat.get_special_purpose_blocks())
-    loop.create_task(heartbeat.process_special_purpose_blocks())
+    # loop.create_task(heartbeat.get_special_purpose_blocks())
+    # loop.create_task(heartbeat.process_special_purpose_blocks())
 
-    loop.create_task(heartbeat.get_redo_token_addresses())
-    loop.create_task(heartbeat.special_purpose_token_accounting())
+    # loop.create_task(heartbeat.get_redo_token_addresses())
+    # loop.create_task(heartbeat.special_purpose_token_accounting())
 
-    loop.create_task(heartbeat.update_nodes_from_dashboard())
-    loop.create_task(heartbeat.update_involved_accounts_all_top_list())
+    # loop.create_task(heartbeat.update_nodes_from_dashboard())
+    # loop.create_task(heartbeat.update_involved_accounts_all_top_list())
 
-    loop.create_task(heartbeat.update_exchange_rates_for_tokens())
-    loop.create_task(heartbeat.update_exchange_rates_historical_for_tokens())
+    # loop.create_task(heartbeat.update_exchange_rates_for_tokens())
+    # loop.create_task(heartbeat.update_exchange_rates_historical_for_tokens())
 
-    loop.create_task(heartbeat.update_memos_to_hashes())
+    # loop.create_task(heartbeat.update_memos_to_hashes())
 
-    loop.create_task(heartbeat.web23_domain_name_metadata())
+    # loop.create_task(heartbeat.web23_domain_name_metadata())
     loop.create_task(heartbeat.read_token_metadata_if_not_present())
 
     loop.run_forever()
