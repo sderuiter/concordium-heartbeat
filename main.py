@@ -305,7 +305,7 @@ class Heartbeat:
                 ):
                     do_request = False
                 else:
-                    print(
+                    console.log(
                         f"Trying{token_address_as_class.token_id} now: Current FA: {token_address_as_class.failed_attempt} "
                     )
             if do_request:
@@ -2361,7 +2361,9 @@ class Heartbeat:
                 for dom in current_content:
                     if dom.token_metadata:
                         continue
-                    print(dom.contract, dom.token_id)
+                    console.log(
+                        f"Trying to read metadata for: {dom.contract}-{dom.token_id}"
+                    )
                     self.read_and_store_metadata(dom)
 
             except Exception as e:
