@@ -328,6 +328,8 @@ class Heartbeat:
                         )
                     except Exception as e:
                         error = str(e)
+                else:
+                    error = f"Request status code: {r.status_code}"
 
         except Exception as e:
             error = str(e)
