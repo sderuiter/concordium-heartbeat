@@ -1,15 +1,14 @@
+# ruff: noqa: F403, F405, E402, E501, E722
 import asyncio
 from sharingiscaring.GRPCClient import GRPCClient
-from pymongo import monitoring, errors
 from rich import print
 from rich.progress import track
 import requests
 import datetime as dt
 from datetime import timezone
 import dateutil
-import copy
+
 from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.GRPCClient.types_pb2 import Empty
 from sharingiscaring.tooter import Tooter, TooterChannel, TooterType
 from sharingiscaring.mongodb import (
     MongoDB,
@@ -38,7 +37,6 @@ from sharingiscaring.cis import (
 )
 import sharingiscaring.GRPCClient.wadze as wadze
 from pymongo.collection import Collection
-from pymongo.database import Database
 from pymongo import ASCENDING, DESCENDING
 from pymongo import ReplaceOne
 import aiohttp
@@ -160,7 +158,7 @@ class Heartbeat:
     def mongo_save_for_token_address(
         self, token_address_as_class: MongoTypeTokenAddress
     ):
-        repl_dict = token_address_as_class.dict()
+        repl_dict = token_address_as_class.model_dump()
         if "id" in repl_dict:
             del repl_dict["id"]
 
@@ -182,7 +180,7 @@ class Heartbeat:
         return queue_item
 
     def mongo_save_for_address(self, address_to_save: MongoTypeTokenHolderAddress):
-        repl_dict = address_to_save.dict()
+        repl_dict = address_to_save.model_dump()
         if "id" in repl_dict:
             del repl_dict["id"]
 
@@ -318,7 +316,7 @@ class Heartbeat:
                         metadata = TokenMetaData(**r.json())
                         token_address_as_class.token_metadata = metadata
                         token_address_as_class.failed_attempt = None
-                        dom_dict = token_address_as_class.dict(exclude_none=True)
+                        dom_dict = token_address_as_class.model_dump(exclude_none=True)
                         if "id" in dom_dict:
                             del dom_dict["id"]
                         self.db[Collections.tokens_token_addresses].replace_one(
@@ -353,7 +351,7 @@ class Heartbeat:
                 failed_attempt.last_error = error
 
             token_address_as_class.failed_attempt = failed_attempt
-            dom_dict = token_address_as_class.dict(exclude_none=True)
+            dom_dict = token_address_as_class.model_dump(exclude_none=True)
             if "id" in dom_dict:
                 del dom_dict["id"]
             self.db[Collections.tokens_token_addresses].replace_one(
@@ -765,7 +763,7 @@ class Heartbeat:
             "sender_canonical": result.sender[:29] if result.sender else None,
             "receiver_canonical": result.receiver[:29] if result.receiver else None,
             "amount": result.amount,
-            "type": result.type.dict(),
+            "type": result.type.model_dump(),
             "block_height": block_info.height,
         }
         if result.memo:
@@ -786,7 +784,7 @@ class Heartbeat:
             "index": contract.index,
             "subindex": contract.subindex,
             "contract": f"<{contract.index},{contract.subindex}>",
-            "type": result.type.dict(),
+            "type": result.type.model_dump(),
             "block_height": block_info.height,
         }
 
@@ -918,7 +916,9 @@ class Heartbeat:
                             block_info.hash,
                             NET(self.net),
                         )
-                        instance_info: dict = instance_info.dict(exclude_none=True)
+                        instance_info: dict = instance_info.model_dump(
+                            exclude_none=True
+                        )
 
                         instance_info.update({"_id": index_contract["contract"]})
                         if instance_info["v0"]["source_module"] == "":
@@ -936,7 +936,7 @@ class Heartbeat:
                             )
                         )
 
-                        if not _source_module in self.existing_source_modules.keys():
+                        if _source_module not in self.existing_source_modules.keys():
                             self.existing_source_modules[_source_module] = set()
 
                         self.existing_source_modules[_source_module].add(
@@ -1018,7 +1018,9 @@ class Heartbeat:
         self, block_info: CCD_BlockInfo, special_purpose: bool = False
     ):
         try:
-            json_block_info: dict = json.loads(block_info.json(exclude_none=True))
+            json_block_info: dict = json.loads(
+                block_info.model_dump_json(exclude_none=True)
+            )
         except Exception as e:
             print(e)
         json_block_info.update({"_id": block_info.hash})
@@ -1038,7 +1040,7 @@ class Heartbeat:
             )
 
             for tx in block.transaction_summaries:
-                json_tx: dict = json.loads(tx.json(exclude_none=True))
+                json_tx: dict = json.loads(tx.model_dump_json(exclude_none=True))
 
                 json_tx.update({"_id": tx.hash})
                 json_tx.update(
@@ -1259,7 +1261,8 @@ class Heartbeat:
                     self.queues[Queue.blocks] = []
                     self.queues[Queue.block_heights] = []
                 else:
-                    update_ = False
+                    pass
+                    # update_ = False
 
                 if len(self.queues[Queue.transactions]) > 0:
                     result = self.db[Collections.transactions].bulk_write(
@@ -1487,7 +1490,6 @@ class Heartbeat:
         processed in the queue `finalized_block_infos_to_process`.
         """
         while True:
-            request_counter = 0
             result = self.db[Collections.helpers].find_one(
                 {"_id": "special_purpose_block_request"}
             )
@@ -1615,11 +1617,11 @@ class Heartbeat:
 
                         for raw_node in t:
                             node = ConcordiumNodeFromDashboard(**raw_node)
-                            d = node.dict()
+                            d = node.model_dump()
                             d["_id"] = node.nodeId
 
                             for k, v in d.items():
-                                if type(v) == int:
+                                if isinstance(v, int):
                                     d[k] = str(v)
 
                             queue.append(
@@ -2256,9 +2258,9 @@ class Heartbeat:
                         # 'token_accounting_last_processed_block_when_done'
                         # such that next iteration, we will not be re-processing
                         # logged events we already have processed.
-                        token_accounting_last_processed_block_when_done = max(
-                            [x.block_height for x in events_for_token_address]
-                        )
+                        # token_accounting_last_processed_block_when_done = max(
+                        #     [x.block_height for x in events_for_token_address]
+                        # )
 
                         console.log(
                             f"Token accounting for Special purpose: Redo {token_address} with {len(events_for_token_address):,.0f} logged events on {self.net}."
@@ -2346,6 +2348,7 @@ class Heartbeat:
                                         ]["metadataURL"]
                                         self.read_and_store_metadata(dom)
                             except Exception as e:
+                                console.log(e)
                                 dom.metadata_url = None
                     except:
                         pass
@@ -2380,13 +2383,11 @@ class Heartbeat:
                 for dom in current_content:
                     if dom.token_metadata:
                         continue
-                    console.log(
-                        f"Trying to read metadata for: {dom.contract}-{dom.token_id}"
-                    )
+
                     self.read_and_store_metadata(dom)
 
             except Exception as e:
-                pass
+                console.log(e)
 
             await asyncio.sleep(500)
 
