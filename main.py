@@ -1630,7 +1630,7 @@ class Heartbeat:
 
                         _ = self.db[Collections.dashboard_nodes].delete_many({})
                         _ = self.db[Collections.dashboard_nodes].bulk_write(queue)
-
+                        #
                         # update nodes status retrieval
                         query = {"_id": "heartbeat_last_timestamp_dashboard_nodes"}
                         self.db[Collections.helpers].replace_one(
