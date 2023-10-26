@@ -209,8 +209,8 @@ class Heartbeat:
         else:
             impacted_address_as_class = MongoImpactedAddress(
                 **{
-                    # "_id": f"{tx.hash}-{impacted_address}",
-                    "_id": ObjectId(),
+                    "_id": f"{tx.hash}-{impacted_address[:29]}",
+                    # "_id": ObjectId(),
                     "tx_hash": tx.hash,
                     "impacted_address": impacted_address,
                     "impacted_address_canonical": impacted_address[:29],
