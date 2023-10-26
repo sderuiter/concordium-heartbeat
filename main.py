@@ -7,6 +7,9 @@ import requests
 import datetime as dt
 from datetime import timezone
 import dateutil
+from pydantic import BaseModel, Field, ConfigDict
+from bson.objectid import ObjectId
+
 
 from sharingiscaring.GRPCClient.CCD_Types import *
 from sharingiscaring.tooter import Tooter, TooterChannel, TooterType
@@ -16,6 +19,9 @@ from sharingiscaring.mongodb import (
     MongoTypeInstance,
     MongoMotor,
     CollectionsUtilities,
+    MongoImpactedAddress,
+    AccountStatementEntryType,
+    AccountStatementTransferType,
 )
 from itertools import chain
 from sharingiscaring.enums import NET
@@ -102,6 +108,7 @@ class Queue(Enum):
     logged_events = 8
     token_addresses_to_redo_accounting = 9
     provenance_contracts_to_add = 10
+    impacted_addresses = 11
 
 
 class ClassificationResult:
@@ -153,6 +160,213 @@ class Heartbeat:
         self.queues: Dict[Collections, list] = {}
         for q in Queue:
             self.queues[q] = []
+
+    ########### Impacted Addresses
+
+    def address_to_str(self, address: CCD_Address) -> str:
+        if address.contract:
+            return address.contract.to_str()
+        else:
+            return address.account
+
+    def file_a_balance_movement(
+        self,
+        tx: CCD_BlockItemSummary,
+        impacted_addresses_in_tx: dict[MongoImpactedAddress],
+        impacted_address: str,
+        balance_movement_to_add: AccountStatementEntryType,
+    ):
+        if impacted_addresses_in_tx.get(impacted_address):
+            impacted_address_as_class: MongoImpactedAddress = impacted_addresses_in_tx[
+                impacted_address
+            ]
+            bm: AccountStatementEntryType = impacted_address_as_class.balance_movement
+            field_set = list(balance_movement_to_add.model_fields_set)[0]
+            if field_set == "transfer_in":
+                if not bm.transfer_in:
+                    bm.transfer_in = []
+                bm.transfer_in.extend(balance_movement_to_add.transfer_in)
+            elif field_set == "transfer_out":
+                if not bm.transfer_out:
+                    bm.transfer_out = []
+                bm.transfer_out.extend(balance_movement_to_add.transfer_out)
+            elif field_set == "amount_encrypted":
+                bm.amount_encrypted = balance_movement_to_add.amount_encrypted
+            elif field_set == "amount_decrypted":
+                bm.amount_decrypted = balance_movement_to_add.amount_decrypted
+            elif field_set == "baker_reward":
+                bm.baker_reward = balance_movement_to_add.baker_reward
+            elif field_set == "finalization_reward":
+                bm.finalization_reward = balance_movement_to_add.finalization_reward
+            elif field_set == "foundation_reward":
+                bm.foundation_reward = balance_movement_to_add.foundation_reward
+            elif field_set == "transaction_fee_reward":
+                bm.transaction_fee_reward = (
+                    balance_movement_to_add.transaction_fee_reward
+                )
+
+            impacted_address_as_class.balance_movement = bm
+        else:
+            impacted_address_as_class = MongoImpactedAddress(
+                **{
+                    # "_id": f"{tx.hash}-{impacted_address}",
+                    "_id": ObjectId(),
+                    "tx_hash": tx.hash,
+                    "impacted_address": impacted_address,
+                    "impacted_address_canonical": impacted_address[:29],
+                    "effect_type": tx.type.contents,
+                    "balance_movement": balance_movement_to_add,
+                    "block_height": tx.block_info.height,
+                }
+            )
+            impacted_addresses_in_tx[impacted_address] = impacted_address_as_class
+
+    def file_balance_movements(
+        self,
+        tx: CCD_BlockItemSummary,
+        impacted_addresses_in_tx: dict[MongoImpactedAddress],
+        amount: microCCD,
+        sender: str,
+        receiver: str,
+    ):
+        # first add to sander balance_movement
+        balance_movement = AccountStatementEntryType(
+            transfer_out=[
+                AccountStatementTransferType(
+                    amount=amount,
+                    counterparty=receiver[:29] if len(receiver) > 20 else receiver,
+                )
+            ]
+        )
+        self.file_a_balance_movement(
+            tx,
+            impacted_addresses_in_tx,
+            sender,
+            balance_movement,
+        )
+
+        # then to the receiver balance_movement
+        balance_movement = AccountStatementEntryType(
+            transfer_in=[
+                AccountStatementTransferType(
+                    amount=amount,
+                    counterparty=sender[:29] if len(sender) > 20 else sender,
+                )
+            ]
+        )
+        self.file_a_balance_movement(
+            tx,
+            impacted_addresses_in_tx,
+            receiver,
+            balance_movement,
+        )
+
+    def extract_impacted_addesses_from_tx(self, tx: CCD_BlockItemSummary):
+        impacted_addresses_in_tx: dict[str:MongoImpactedAddress] = {}
+        if tx.account_creation:
+            balance_movement = AccountStatementEntryType()
+            self.file_a_balance_movement(
+                tx,
+                impacted_addresses_in_tx,
+                tx.account_creation.address,
+                balance_movement,
+            )
+        if tx.account_transaction:
+            # Always store the fee for the sender
+            balance_movement = AccountStatementEntryType(
+                transaction_fee=tx.account_transaction.cost
+            )
+            self.file_a_balance_movement(
+                tx,
+                impacted_addresses_in_tx,
+                tx.account_transaction.sender,
+                balance_movement,
+            )
+
+            # Next, for the below effect types, we need to store additional
+            # balance movements.
+            if tx.account_transaction.effects.contract_update_issued:
+                for (
+                    effect
+                ) in tx.account_transaction.effects.contract_update_issued.effects:
+                    if effect.updated:
+                        instigator_str = self.address_to_str(effect.updated.instigator)
+                        if effect.updated.amount > 0:
+                            self.file_balance_movements(
+                                tx,
+                                impacted_addresses_in_tx,
+                                effect.updated.amount,
+                                instigator_str,
+                                effect.updated.address.to_str(),
+                            )
+
+                    elif effect.transferred:
+                        self.file_balance_movements(
+                            tx,
+                            impacted_addresses_in_tx,
+                            effect.transferred.amount,
+                            effect.transferred.sender.to_str(),
+                            effect.transferred.receiver,
+                        )
+
+            elif tx.account_transaction.effects.account_transfer:
+                self.file_balance_movements(
+                    tx,
+                    impacted_addresses_in_tx,
+                    tx.account_transaction.effects.account_transfer.amount,
+                    tx.account_transaction.sender,
+                    tx.account_transaction.effects.account_transfer.receiver,
+                )
+
+            elif tx.account_transaction.effects.transferred_with_schedule:
+                self.file_balance_movements(
+                    tx,
+                    impacted_addresses_in_tx,
+                    self.get_sum_amount_from_scheduled_transfer(
+                        tx.account_transaction.effects.transferred_with_schedule.amount
+                    ),
+                    tx.account_transaction.sender,
+                    tx.account_transaction.effects.transferred_with_schedule.receiver,
+                )
+
+            elif tx.account_transaction.effects.transferred_to_encrypted:
+                balance_movement = AccountStatementEntryType(
+                    amount_encrypted=tx.account_transaction.effects.transferred_to_encrypted.amount
+                )
+                self.file_a_balance_movement(
+                    tx,
+                    impacted_addresses_in_tx,
+                    tx.account_transaction.sender,
+                    balance_movement,
+                )
+
+            elif tx.account_transaction.effects.transferred_to_public:
+                balance_movement = AccountStatementEntryType(
+                    amount_decrypted=tx.account_transaction.effects.transferred_to_public.amount
+                )
+                self.file_a_balance_movement(
+                    tx,
+                    impacted_addresses_in_tx,
+                    tx.account_transaction.sender,
+                    balance_movement,
+                )
+
+        # now this tx is done, so add impacted_addresses to queue
+        for ia in impacted_addresses_in_tx.values():
+            ia: MongoImpactedAddress
+            repl_dict = ia.model_dump(exclude_none=True)
+            if "id" in repl_dict:
+                del repl_dict["id"]
+
+            self.queues[Queue.impacted_addresses].append(
+                ReplaceOne(
+                    {"_id": ia.id},
+                    repl_dict,
+                    upsert=True,
+                )
+            )
+
+    ########### Impacted Addresses
 
     ########### Token Accounting
     def mongo_save_for_token_address(
@@ -879,6 +1093,13 @@ class Heartbeat:
                     provenance_contracts_to_add
                 )
 
+            tx.block_info = CCD_ShortBlockInfo(
+                height=block_info.height,
+                hash=block_info.hash,
+                slot_time=block_info.slot_time,
+            )
+            self.extract_impacted_addesses_from_tx(tx)
+
             result = self.classify_transaction(tx)
 
             dct_transfer_and_all = self.index_transfer_and_all(tx, result, block_info)
@@ -1333,6 +1554,15 @@ class Heartbeat:
                         f"E:  {len(self.queues[Queue.logged_events]):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
                     )
                     self.queues[Queue.logged_events] = []
+
+                if len(self.queues[Queue.impacted_addresses]) > 0:
+                    result = self.db[Collections.impacted_addresses].bulk_write(
+                        self.queues[Queue.impacted_addresses]
+                    )
+                    console.log(
+                        f"IA: {len(self.queues[Queue.impacted_addresses]):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
+                    )
+                    self.queues[Queue.impacted_addresses] = []
 
                 if len(self.queues[Queue.token_addresses_to_redo_accounting]) > 0:
                     query = {"_id": "redo_token_addresses"}
