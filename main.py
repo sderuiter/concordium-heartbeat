@@ -285,6 +285,23 @@ class Heartbeat:
 
             # Next, for the below effect types, we need to store additional
             # balance movements.
+            if tx.account_transaction.effects.contract_initialized:
+                if tx.account_transaction.effects.contract_initialized.amount > 0:
+                    self.file_balance_movements(
+                        tx,
+                        impacted_addresses_in_tx,
+                        tx.account_transaction.effects.contract_initialized.amount,
+                        tx.account_transaction.sender,
+                        tx.account_transaction.effects.contract_initialized.address.to_str(),
+                    )
+                else:
+                    balance_movement = None
+                    self.file_a_balance_movement(
+                        tx,
+                        impacted_addresses_in_tx,
+                        tx.account_transaction.effects.contract_initialized.address.to_str(),
+                        balance_movement,
+                    )
             if tx.account_transaction.effects.contract_update_issued:
                 for (
                     effect
