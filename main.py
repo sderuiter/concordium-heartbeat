@@ -696,20 +696,6 @@ class Heartbeat:
             sum += release.amount
         return sum
 
-    # def decode_memo(self, hex):
-    #     bs = io.BytesIO(bytes.fromhex(hex))
-    #     n = int.from_bytes(bs.read(1), byteorder="little")
-    #     value = bs.read()
-    #     encoding_guess = chardet.detect(value)
-    #     if encoding_guess["encoding"] and encoding_guess["confidence"] > 0.75:
-    #         try:
-    #             memo = bytes.decode(value, encoding_guess["encoding"])
-    #             return memo
-    #         except:
-    #             return hex
-    #     else:
-    #         return hex
-
     def decode_cis_logged_events(
         self,
         tx: CCD_BlockItemSummary,
@@ -1373,7 +1359,9 @@ class Heartbeat:
             for se in special_events:
                 if se.payday_account_reward or se.payday_pool_reward:
                     found = True
-
+                    # this is a special case/place to already log the last_processed message
+                    # as this is holding up the bot v2 in processing the payday block.
+                    self.log_last_processed_message_in_mongo(current_block_to_process)
                     # protection for slow payday calculation
                     # first get the current date that we have stored
                     # as last known payday.
@@ -1658,11 +1646,11 @@ class Heartbeat:
 
                 if special_purpose:
                     # if it's a special purpose block, we need to remove it from the helper
-                    result = self.db[Collections.helpers].find_one(
+                    result: dict = self.db[Collections.helpers].find_one(
                         {"_id": "special_purpose_block_request"}
                     )
                     if result:
-                        heights = result["heights"]
+                        heights: list = result["heights"]
                         heights.remove(current_block_to_process.height)
                         result.update({"heights": heights})
                     _ = self.db[Collections.helpers].bulk_write(
