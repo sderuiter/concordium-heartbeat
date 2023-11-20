@@ -1873,7 +1873,9 @@ class Heartbeat:
                             query,
                             {
                                 "_id": "heartbeat_last_timestamp_dashboard_nodes",
-                                "timestamp": dt.datetime.utcnow(),
+                                "timestamp": dt.datetime.now().astimezone(
+                                    tz=dt.timezone.utc
+                                ),
                             },
                             upsert=True,
                         )
@@ -2243,11 +2245,16 @@ class Heartbeat:
         while True:
             try:
                 pipeline = [
-                    {"$group": {"_id": "$sender_canonical", "count": {"$sum": 1}}},
+                    {
+                        "$group": {
+                            "_id": "$impacted_address_canonical",
+                            "count": {"$sum": 1},
+                        }
+                    },
                     {"$sort": {"count": -1}},
                 ]
                 result = (
-                    await self.motordb[Collections.involved_accounts_all]
+                    await self.motordb[Collections.impacted_addresses]
                     .aggregate(pipeline)
                     .to_list(50)
                 )
