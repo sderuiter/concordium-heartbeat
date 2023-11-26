@@ -1927,26 +1927,27 @@ class Heartbeat:
             "DOGE": "dogecoin",
             "SHIB": "shiba-inu",
         }
-        token_to_request = token_translation_dict[token]
-
-        async with aiohttp.ClientSession() as session:
-            url = f"https://api.coingecko.com/api/v3/simple/price?ids={token_to_request}&vs_currencies=usd&include_last_updated_at=true"
-            async with session.get(url) as resp:
-                if resp.ok:
-                    result = await resp.json()
-                    result = result[token_to_request]
-                    return_dict = {
-                        "_id": f"USD/{token}",
-                        "token": token,
-                        "timestamp": dt.datetime.fromtimestamp(
-                            result["last_updated_at"], tz=timezone.utc
-                        ),
-                        "rate": result["usd"],
-                        "source": "CoinGecko",
-                    }
-                else:
-                    return_dict = None
-
+        token_to_request = token_translation_dict.get(token)
+        if token_to_request:
+            async with aiohttp.ClientSession() as session:
+                url = f"https://api.coingecko.com/api/v3/simple/price?ids={token_to_request}&vs_currencies=usd&include_last_updated_at=true"
+                async with session.get(url) as resp:
+                    if resp.ok:
+                        result = await resp.json()
+                        result = result[token_to_request]
+                        return_dict = {
+                            "_id": f"USD/{token}",
+                            "token": token,
+                            "timestamp": dt.datetime.fromtimestamp(
+                                result["last_updated_at"], tz=timezone.utc
+                            ),
+                            "rate": result["usd"],
+                            "source": "CoinGecko",
+                        }
+                    else:
+                        return_dict = None
+        else:
+            return_dict = None
         return return_dict
 
     async def update_exchange_rates_for_tokens(self):
@@ -1959,8 +1960,10 @@ class Heartbeat:
                         x["_id"].replace("w", "")
                         for x in self.db[Collections.tokens_tags].find(
                             {"owner": "Arabella"}
+                            # {"token_type": "fungible"}
                         )
                     ]
+                    token_list.insert(0, "CCD")
                     queue = []
                     for token in token_list:
                         result = await self.coinapi(token)
