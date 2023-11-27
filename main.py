@@ -172,7 +172,7 @@ class Heartbeat:
     def file_a_balance_movement(
         self,
         tx: CCD_BlockItemSummary,
-        impacted_addresses_in_tx: dict[MongoImpactedAddress],
+        impacted_addresses_in_tx: dict[str:MongoImpactedAddress],
         impacted_address: str,
         balance_movement_to_add: AccountStatementEntryType,
     ):
@@ -224,20 +224,24 @@ class Heartbeat:
     def file_balance_movements(
         self,
         tx: CCD_BlockItemSummary,
-        impacted_addresses_in_tx: dict[MongoImpactedAddress],
+        impacted_addresses_in_tx: dict[str:MongoImpactedAddress],
         amount: microCCD,
         sender: str,
         receiver: str,
     ):
         # first add to sander balance_movement
-        balance_movement = AccountStatementEntryType(
-            transfer_out=[
-                AccountStatementTransferType(
-                    amount=amount,
-                    counterparty=receiver[:29] if len(receiver) > 20 else receiver,
-                )
-            ]
-        )
+        if amount > 0:
+            balance_movement = AccountStatementEntryType(
+                transfer_out=[
+                    AccountStatementTransferType(
+                        amount=amount,
+                        counterparty=receiver[:29] if len(receiver) > 20 else receiver,
+                    )
+                ]
+            )
+        else:
+            balance_movement = None
+
         self.file_a_balance_movement(
             tx,
             impacted_addresses_in_tx,
@@ -246,14 +250,18 @@ class Heartbeat:
         )
 
         # then to the receiver balance_movement
-        balance_movement = AccountStatementEntryType(
-            transfer_in=[
-                AccountStatementTransferType(
-                    amount=amount,
-                    counterparty=sender[:29] if len(sender) > 20 else sender,
-                )
-            ]
-        )
+        if amount > 0:
+            balance_movement = AccountStatementEntryType(
+                transfer_in=[
+                    AccountStatementTransferType(
+                        amount=amount,
+                        counterparty=sender[:29] if len(sender) > 20 else sender,
+                    )
+                ]
+            )
+        else:
+            balance_movement = None
+
         self.file_a_balance_movement(
             tx,
             impacted_addresses_in_tx,
@@ -308,14 +316,13 @@ class Heartbeat:
                 ) in tx.account_transaction.effects.contract_update_issued.effects:
                     if effect.updated:
                         instigator_str = self.address_to_str(effect.updated.instigator)
-                        if effect.updated.amount > 0:
-                            self.file_balance_movements(
-                                tx,
-                                impacted_addresses_in_tx,
-                                effect.updated.amount,
-                                instigator_str,
-                                effect.updated.address.to_str(),
-                            )
+                        self.file_balance_movements(
+                            tx,
+                            impacted_addresses_in_tx,
+                            effect.updated.amount,
+                            instigator_str,
+                            effect.updated.address.to_str(),
+                        )
 
                     elif effect.transferred:
                         self.file_balance_movements(
@@ -324,6 +331,24 @@ class Heartbeat:
                             effect.transferred.amount,
                             effect.transferred.sender.to_str(),
                             effect.transferred.receiver,
+                        )
+
+                    elif effect.interrupted:
+                        balance_movement = None
+                        self.file_a_balance_movement(
+                            tx,
+                            impacted_addresses_in_tx,
+                            effect.interrupted.address.to_str(),
+                            balance_movement,
+                        )
+
+                    elif effect.resumed:
+                        balance_movement = None
+                        self.file_a_balance_movement(
+                            tx,
+                            impacted_addresses_in_tx,
+                            effect.resumed.address.to_str(),
+                            balance_movement,
                         )
 
             elif tx.account_transaction.effects.account_transfer:
