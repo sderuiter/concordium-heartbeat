@@ -181,29 +181,30 @@ class Heartbeat:
                 impacted_address
             ]
             bm: AccountStatementEntryType = impacted_address_as_class.balance_movement
-            field_set = list(balance_movement_to_add.model_fields_set)[0]
-            if field_set == "transfer_in":
-                if not bm.transfer_in:
-                    bm.transfer_in = []
-                bm.transfer_in.extend(balance_movement_to_add.transfer_in)
-            elif field_set == "transfer_out":
-                if not bm.transfer_out:
-                    bm.transfer_out = []
-                bm.transfer_out.extend(balance_movement_to_add.transfer_out)
-            elif field_set == "amount_encrypted":
-                bm.amount_encrypted = balance_movement_to_add.amount_encrypted
-            elif field_set == "amount_decrypted":
-                bm.amount_decrypted = balance_movement_to_add.amount_decrypted
-            elif field_set == "baker_reward":
-                bm.baker_reward = balance_movement_to_add.baker_reward
-            elif field_set == "finalization_reward":
-                bm.finalization_reward = balance_movement_to_add.finalization_reward
-            elif field_set == "foundation_reward":
-                bm.foundation_reward = balance_movement_to_add.foundation_reward
-            elif field_set == "transaction_fee_reward":
-                bm.transaction_fee_reward = (
-                    balance_movement_to_add.transaction_fee_reward
-                )
+            if balance_movement_to_add:
+                field_set = list(balance_movement_to_add.model_fields_set)[0]
+                if field_set == "transfer_in":
+                    if not bm.transfer_in:
+                        bm.transfer_in = []
+                    bm.transfer_in.extend(balance_movement_to_add.transfer_in)
+                elif field_set == "transfer_out":
+                    if not bm.transfer_out:
+                        bm.transfer_out = []
+                    bm.transfer_out.extend(balance_movement_to_add.transfer_out)
+                elif field_set == "amount_encrypted":
+                    bm.amount_encrypted = balance_movement_to_add.amount_encrypted
+                elif field_set == "amount_decrypted":
+                    bm.amount_decrypted = balance_movement_to_add.amount_decrypted
+                elif field_set == "baker_reward":
+                    bm.baker_reward = balance_movement_to_add.baker_reward
+                elif field_set == "finalization_reward":
+                    bm.finalization_reward = balance_movement_to_add.finalization_reward
+                elif field_set == "foundation_reward":
+                    bm.foundation_reward = balance_movement_to_add.foundation_reward
+                elif field_set == "transaction_fee_reward":
+                    bm.transaction_fee_reward = (
+                        balance_movement_to_add.transaction_fee_reward
+                    )
 
             impacted_address_as_class.balance_movement = bm
         else:
