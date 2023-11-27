@@ -130,6 +130,8 @@ class ClassificationResult:
         self.accounts_involved_all = False
         self.accounts_involved_transfer = False
         self.contracts_involved = False
+        self.module_involved = False
+        self.actual_module_involved = None
         self.list_of_contracts_involved = []
 
 
@@ -956,6 +958,10 @@ class Heartbeat:
                     ci = effects.contract_initialized
                     result.list_of_contracts_involved.append({"address": ci.address})
 
+                elif effects.module_deployed:
+                    result.module_involved = True
+                    result.actual_module_involved = effects.module_deployed
+
                 elif effects.contract_update_issued:
                     result.contracts_involved = True
 
@@ -1074,23 +1080,26 @@ class Heartbeat:
         )
         # for module_ref in self.existing_source_modules.keys():
         for module_ref in self.queues[Queue.updated_modules]:
-            try:
-                results = self.get_module_metadata(
-                    current_block_to_process.hash, module_ref
-                )
-            except:
-                results = {"module_name": "", "methods": []}
-            module = {
-                "_id": module_ref,
-                "module_name": results["module_name"]
-                if "module_name" in results.keys()
-                else None,
-                "methods": results["methods"] if "methods" in results.keys() else None,
-                "contracts": list(self.existing_source_modules[module_ref]),
-            }
-            self.queues[Queue.modules].append(
-                ReplaceOne({"_id": module_ref}, module, upsert=True)
-            )
+            self.get_module_data_and_add_to_queue(module_ref)
+
+    def get_module_data_and_add_to_queue(self, module_ref: CCD_ModuleRef):
+        try:
+            results = self.get_module_metadata("last_final", module_ref)
+        except:
+            results = {"module_name": "", "methods": []}
+        module = {
+            "_id": module_ref,
+            "module_name": results["module_name"]
+            if "module_name" in results.keys()
+            else None,
+            "methods": results["methods"] if "methods" in results.keys() else None,
+            "contracts": list(self.existing_source_modules.get(module_ref), [])
+            if self.existing_source_modules.get(module_ref)
+            else None,
+        }
+        self.queues[Queue.modules].append(
+            ReplaceOne({"_id": module_ref}, module, upsert=True)
+        )
 
     def generate_indices_based_on_transactions(
         self,
@@ -1141,6 +1150,9 @@ class Heartbeat:
                     upsert=True,
                 )
             )
+
+            if result.module_involved:
+                self.get_module_data_and_add_to_queue(result.actual_module_involved)
 
             # only store tx in this collection if it's a transfer
             if result.accounts_involved_transfer:
