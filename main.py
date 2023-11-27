@@ -1093,7 +1093,7 @@ class Heartbeat:
             if "module_name" in results.keys()
             else None,
             "methods": results["methods"] if "methods" in results.keys() else None,
-            "contracts": list(self.existing_source_modules.get(module_ref), [])
+            "contracts": list(self.existing_source_modules.get(module_ref, []))
             if self.existing_source_modules.get(module_ref)
             else None,
         }
