@@ -183,6 +183,8 @@ class Heartbeat:
                 impacted_address
             ]
             bm: AccountStatementEntryType = impacted_address_as_class.balance_movement
+            if not bm:
+                bm = AccountStatementEntryType()
             if balance_movement_to_add:
                 field_set = list(balance_movement_to_add.model_fields_set)[0]
                 if field_set == "transfer_in":
