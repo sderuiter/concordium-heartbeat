@@ -1368,27 +1368,30 @@ class Heartbeat:
                     # Then check if this date has already been picked up
                     # by the payday calculation by checking if there
                     # exists a payday with that date.
-                    payday_not_yet_processed = True
-                    while payday_not_yet_processed:
-                        last_known_payday = self.db[Collections.helpers].find_one(
-                            {"_id": "last_known_payday"}
-                        )
-                        # if we haven't started with the first payday
-                        # we can continue.
-                        if not last_known_payday:
-                            payday_not_yet_processed = False
-                            result = True
-                        else:
-                            result = self.db[Collections.paydays].find_one(
-                                {"date": last_known_payday["date"]}
-                            )
-                        if not result:
-                            console.log(
-                                f"Payday {last_known_payday['date']} not yet processed. Sleeping for 10 sec."
-                            )
-                            time.sleep(10)
-                        else:
-                            payday_not_yet_processed = False
+
+                    # TODO: when we need to rerun EVERYTING, comment out the below....
+
+                    # payday_not_yet_processed = True
+                    # while payday_not_yet_processed:
+                    #     last_known_payday = self.db[Collections.helpers].find_one(
+                    #         {"_id": "last_known_payday"}
+                    #     )
+                    #     # if we haven't started with the first payday
+                    #     # we can continue.
+                    #     if not last_known_payday:
+                    #         payday_not_yet_processed = False
+                    #         result = True
+                    #     else:
+                    #         result = self.db[Collections.paydays].find_one(
+                    #             {"date": last_known_payday["date"]}
+                    #         )
+                    #     if not result:
+                    #         console.log(
+                    #             f"Payday {last_known_payday['date']} not yet processed. Sleeping for 10 sec."
+                    #         )
+                    #         time.sleep(10)
+                    #     else:
+                    #         payday_not_yet_processed = False
 
                     new_payday_date_string = (
                         f"{current_block_to_process.slot_time:%Y-%m-%d}"
