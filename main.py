@@ -1671,9 +1671,14 @@ class Heartbeat:
 
     def process_list_of_blocks(self, block_list: list, special_purpose: bool = False):
         result = self.db[Collections.modules].find({})
+        result = list(result)
         self.existing_source_modules: dict[CCD_ModuleRef, set] = {
-            x["_id"]: set(x["contracts"]) for x in list(result)
+            x["_id"]: set(x["contracts"]) for x in result if x["contracts"] is not None
         }
+        existing_source_modules_no_contracts = {
+            x["_id"]: set() for x in result if x["contracts"] is None
+        }
+        self.existing_source_modules.update(existing_source_modules_no_contracts)
         self.queues[Queue.updated_modules] = []
 
         start = dt.datetime.now()
