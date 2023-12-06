@@ -505,6 +505,7 @@ class Heartbeat:
         # token_holders according to the token_address (this
         # was just updated, so correct.) We need to compare this with
         # token_holders_before_executing_logged_events.
+
         token_holders_from_address = token_address_as_class.token_holders.keys()
 
         token_holders_zero_amounts = list(
