@@ -740,6 +740,7 @@ class Heartbeat:
         the logged event is executed and the result is stored in the
         collections accounts and token_addresses.
         """
+
         # this is the ordering of effects as encountered in the transaction
         ordering = 0
         logged_events = []
