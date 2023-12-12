@@ -701,6 +701,7 @@ class Heartbeat:
                 "token_amount": str(int(0)),  # mongo limitation on int size
                 "token_holders": {},  # {CCD_AccountAddress, str(token_amount)}
                 "last_height_processed": -1,
+                "hidden": False,
             }
         )
         return token_address
