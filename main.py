@@ -109,6 +109,7 @@ class Queue(Enum):
     token_addresses_to_redo_accounting = 9
     provenance_contracts_to_add = 10
     impacted_addresses = 11
+    special_events = 12
 
 
 class ClassificationResult:
@@ -1335,6 +1336,19 @@ class Heartbeat:
         )
         self.queues[Queue.block_heights].append(block_info.height)
 
+        # add special events
+        se = self.grpcclient.get_block_special_events(block_info.height)
+        se_list = [x.model_dump(exclude_none=True) for x in se]
+
+        d = {"_id": block_info.height, "special_events": se_list}
+        self.queues[Queue.special_events].append(
+            ReplaceOne(
+                {"_id": block_info.height},
+                replacement=d,
+                upsert=True,
+            )
+        )
+
     def lookout_for_end_of_day(self, current_block_to_process: CCD_BlockInfo):
         end_of_day_timeframe_start = dt.time(0, 0, 0)
         end_of_day_timeframe_end = dt.time(0, 2, 0)
@@ -1512,10 +1526,6 @@ class Heartbeat:
         while True:
             try:
                 if len(self.queues[Queue.blocks]) > 0:
-                    # update_ = True
-                    # heartbeat_last_processed_block = CCD_BlockInfo(
-                    #     **self.queues[Queue.blocks][-1]._doc
-                    # )
                     result = self.db[Collections.blocks].bulk_write(
                         self.queues[Queue.blocks]
                     )
@@ -1535,6 +1545,12 @@ class Heartbeat:
                 else:
                     pass
                     # update_ = False
+
+                if len(self.queues[Queue.special_events]) > 0:
+                    result = self.db[Collections.special_events].bulk_write(
+                        self.queues[Queue.special_events]
+                    )
+                    self.queues[Queue.special_events] = []
 
                 if len(self.queues[Queue.transactions]) > 0:
                     result = self.db[Collections.transactions].bulk_write(
