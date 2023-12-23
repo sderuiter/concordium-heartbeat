@@ -225,14 +225,16 @@ class Heartbeat:
             # new address
             included_in_flow = False
             if balance_movement_to_add:
-                field_set = list(balance_movement_to_add.model_fields_set)[0]
-                if field_set in [
-                    "transfer_in",
-                    "transfer_out",
-                    "amount_encrypted",
-                    "amount_decrypted",
-                ]:
-                    included_in_flow = True
+                model_fields_set = list(balance_movement_to_add.model_fields_set)
+                if len(model_fields_set) > 0:
+                    field_set = model_fields_set[0]
+                    if field_set in [
+                        "transfer_in",
+                        "transfer_out",
+                        "amount_encrypted",
+                        "amount_decrypted",
+                    ]:
+                        included_in_flow = True
 
             impacted_address_as_class = MongoImpactedAddress(
                 **{
