@@ -188,6 +188,15 @@ class Heartbeat:
                 bm = AccountStatementEntryType()
             if balance_movement_to_add:
                 field_set = list(balance_movement_to_add.model_fields_set)[0]
+
+                if field_set in [
+                    "transfer_in",
+                    "transfer_out",
+                    "amount_encrypted",
+                    "amount_decrypted",
+                ]:
+                    impacted_address_as_class.included_in_flow = True
+
                 if field_set == "transfer_in":
                     if not bm.transfer_in:
                         bm.transfer_in = []
@@ -213,6 +222,18 @@ class Heartbeat:
 
             impacted_address_as_class.balance_movement = bm
         else:
+            # new address
+            included_in_flow = False
+            if balance_movement_to_add:
+                field_set = list(balance_movement_to_add.model_fields_set)[0]
+                if field_set in [
+                    "transfer_in",
+                    "transfer_out",
+                    "amount_encrypted",
+                    "amount_decrypted",
+                ]:
+                    included_in_flow = True
+
             impacted_address_as_class = MongoImpactedAddress(
                 **{
                     "_id": f"{tx.hash}-{impacted_address[:29]}",
@@ -223,6 +244,7 @@ class Heartbeat:
                     "effect_type": tx.type.contents,
                     "balance_movement": balance_movement_to_add,
                     "block_height": tx.block_info.height,
+                    "included_in_flow": included_in_flow,
                 }
             )
             impacted_addresses_in_tx[impacted_address] = impacted_address_as_class
