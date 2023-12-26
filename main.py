@@ -247,6 +247,7 @@ class Heartbeat:
                     "balance_movement": balance_movement_to_add,
                     "block_height": tx.block_info.height,
                     "included_in_flow": included_in_flow,
+                    "date": f"{tx.block_info.slot_time:%Y-%m-%d}",
                 }
             )
             impacted_addresses_in_tx[impacted_address] = impacted_address_as_class
