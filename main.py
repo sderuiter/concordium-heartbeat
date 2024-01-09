@@ -2182,6 +2182,11 @@ class Heartbeat:
                                 upsert=True,
                             )
 
+                    self.tooter.send(
+                        channel=TooterChannel.NOTIFIER,
+                        message="Updated exchange rates historical.",
+                        notifier_type=TooterType.INFO,
+                    )
                 except Exception as e:
                     self.tooter.send(
                         channel=TooterChannel.NOTIFIER,
