@@ -2159,7 +2159,7 @@ class Heartbeat:
                             {"owner": "Arabella"}
                         )
                     ]
-                    token_list.append("wCCD")
+                    token_list.append("CCD")
                     queue = []
                     for token in token_list:
                         queue = await self.coingecko_historical(token)
