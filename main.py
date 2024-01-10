@@ -2990,28 +2990,28 @@ def main():
 
     loop = asyncio.get_event_loop()
 
-    # loop.create_task(heartbeat.get_finalized_blocks())
-    # loop.create_task(heartbeat.process_blocks())
-    # loop.create_task(heartbeat.send_to_mongo())
+    loop.create_task(heartbeat.get_finalized_blocks())
+    loop.create_task(heartbeat.process_blocks())
+    loop.create_task(heartbeat.send_to_mongo())
 
-    # loop.create_task(heartbeat.update_token_accounting())
+    loop.create_task(heartbeat.update_token_accounting())
 
-    # loop.create_task(heartbeat.get_special_purpose_blocks())
-    # loop.create_task(heartbeat.process_special_purpose_blocks())
+    loop.create_task(heartbeat.get_special_purpose_blocks())
+    loop.create_task(heartbeat.process_special_purpose_blocks())
 
-    # loop.create_task(heartbeat.get_redo_token_addresses())
-    # loop.create_task(heartbeat.special_purpose_token_accounting())
+    loop.create_task(heartbeat.get_redo_token_addresses())
+    loop.create_task(heartbeat.special_purpose_token_accounting())
 
-    # loop.create_task(heartbeat.update_nodes_from_dashboard())
-    # loop.create_task(heartbeat.update_involved_accounts_all_top_list())
+    loop.create_task(heartbeat.update_nodes_from_dashboard())
+    loop.create_task(heartbeat.update_involved_accounts_all_top_list())
 
-    # loop.create_task(heartbeat.update_exchange_rates_for_tokens())
+    loop.create_task(heartbeat.update_exchange_rates_for_tokens())
     loop.create_task(heartbeat.update_exchange_rates_historical_for_tokens())
 
-    # loop.create_task(heartbeat.update_memos_to_hashes())
+    loop.create_task(heartbeat.update_memos_to_hashes())
 
-    # loop.create_task(heartbeat.web23_domain_name_metadata())
-    # loop.create_task(heartbeat.read_token_metadata_if_not_present())
+    loop.create_task(heartbeat.web23_domain_name_metadata())
+    loop.create_task(heartbeat.read_token_metadata_if_not_present())
 
     loop.run_forever()
 
