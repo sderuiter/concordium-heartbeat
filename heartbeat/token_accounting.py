@@ -15,7 +15,10 @@ from sharingiscaring.cis import (
     transferEvent,
     burnEvent,
     tokenMetadataEvent,
+    MongoTypeTokensTag,
 )
+import aiohttp
+from itertools import chain
 from pymongo import ReplaceOne, ASCENDING
 from pymongo.collection import Collection
 import requests
@@ -28,6 +31,118 @@ console = Console()
 
 ########### Token Accounting
 class TokenAccounting(Utils):
+    async def get_domain_name_from_metadata(self, dom: MongoTypeTokenAddress):
+        async with aiohttp.ClientSession() as session:
+            url = f"{dom.metadata_url}"
+            async with session.get(url) as resp:
+                t = await resp.json()
+                # print(t)
+                try:
+                    return t["name"]
+                except:
+                    return None
+
+    async def web23_domain_name_metadata(self):
+        """
+        This method looks into the token_addresses collection specifically for
+        tokenIDs from contract 9377 (the Web23 CCD contract).
+        As they have not implemented the metadata log event, we need to perform
+        this ourselves.
+        As such, every time this runs, it retrieves all tokenIDs from this contract
+        and loops through all tokenIDs that do not have metadata set (mostly new, could
+        also be that in a previous run, there was a http issue).
+        For every tokenID withou metadata, there is a call to the wallet-proxy to get
+        the metadataURL, which is then stored in the collection. Finally, we read the
+        metadataURL to determine the actual domainname and store this is a separate
+        collection.
+        """
+        while True:
+            try:
+                ccd_token_tags = self.db[Collections.tokens_tags].find_one(
+                    {"_id": ".ccd"}
+                )
+
+                if ccd_token_tags:
+                    contracts_in_ccd_token_tag = MongoTypeTokensTag(
+                        **ccd_token_tags
+                    ).contracts
+                    query = {"contract": {"$in": contracts_in_ccd_token_tag}}
+
+                    current_content = [
+                        MongoTypeTokenAddress(**x)
+                        for x in self.db[Collections.tokens_token_addresses].find(query)
+                    ]
+                else:
+                    current_content = []
+
+                for dom in current_content:
+                    if dom.token_metadata:
+                        continue
+                    contract_index = CCD_ContractAddress.from_str(dom.contract).index
+                    if self.net == "testnet":
+                        url_to_fetch_metadata = f"https://wallet-proxy.testnet.concordium.com/v0/CIS2TokenMetadata/{contract_index}/0?tokenId={dom.token_id}"
+                    else:
+                        url_to_fetch_metadata = f"https://wallet-proxy.mainnet.concordium.software/v0/CIS2TokenMetadata/{contract_index}/0?tokenId={dom.token_id}"
+                    timeout = 1  # sec
+                    print(url_to_fetch_metadata)
+                    try:
+                        r = requests.get(
+                            url=url_to_fetch_metadata, verify=False, timeout=timeout
+                        )
+                        dom.metadata_url = None
+                        if r.status_code == 200:
+                            try:
+                                token_metadata = r.json()
+                                if "metadata" in token_metadata:
+                                    if "metadataURL" in token_metadata["metadata"][0]:
+                                        dom.metadata_url = token_metadata["metadata"][
+                                            0
+                                        ]["metadataURL"]
+                                        self.read_and_store_metadata(dom)
+                            except Exception as e:
+                                console.log(e)
+                                dom.metadata_url = None
+                    except:
+                        pass
+
+            except Exception as e:
+                console.log(e)
+
+            await asyncio.sleep(59)
+
+    async def read_token_metadata_if_not_present(self):
+        """
+        We only try to read metadata for recognized tokens.
+        Too much noise and unreliable urls otherwise.
+        """
+        while True:
+            try:
+                token_tags = self.db[Collections.tokens_tags].find({})
+
+                recognized_contracts = [
+                    MongoTypeTokensTag(**x).contracts for x in token_tags
+                ]
+
+                query = {
+                    "contract": {"$in": list(chain.from_iterable(recognized_contracts))}
+                }
+
+                current_content = [
+                    MongoTypeTokenAddress(**x)
+                    for x in self.db[Collections.tokens_token_addresses].find(query)
+                ]
+
+                for dom in current_content:
+                    if dom.token_metadata:
+                        continue
+
+                    self.read_and_store_metadata(dom)
+
+            except Exception as e:
+                console.log(e)
+
+            await asyncio.sleep(500)
+
     async def update_token_accounting(self):
         """
         This method takes logged events and processes them for

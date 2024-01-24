@@ -3,8 +3,11 @@ from enum import Enum
 from sharingiscaring.GRPCClient.CCD_Types import *
 from sharingiscaring.mongodb import Collections, MongoTypeInstance
 from sharingiscaring.cis import CIS, StandardIdentifiers
+from sharingiscaring.tooter import TooterChannel, TooterType
 from sharingiscaring.enums import NET
+from pymongo import ReplaceOne
 import io
+import asyncio
 import chardet
 
 
@@ -121,6 +124,17 @@ class Utils:
                 return True, "Decoding failure..."
         except:
             return True, "Decoding failure..."
+
+    def init_cis(self, contract_index, contract_subindex, entrypoint):
+        cis = CIS(
+            self.grpcclient,
+            contract_index,
+            contract_subindex,
+            entrypoint,
+            NET(self.net),
+        )
+
+        return cis
 
     def decode_cis_logged_events(
         self,
@@ -299,6 +313,55 @@ class Utils:
             token_addresses_to_redo_accounting,
             provenance_contracts_to_add,
         )
+
+    async def update_involved_accounts_all_top_list(self):
+        while True:
+            try:
+                pipeline = [
+                    {
+                        "$group": {
+                            "_id": "$impacted_address_canonical",
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {"$sort": {"count": -1}},
+                ]
+                result = (
+                    await self.motordb[Collections.impacted_addresses]
+                    .aggregate(pipeline)
+                    .to_list(50)
+                )
+
+                local_queue = []
+                for r in result:
+                    local_queue.append(ReplaceOne({"_id": r["_id"]}, r, upsert=True))
+
+                _ = self.db[Collections.involved_accounts_all_top_list].delete_many({})
+                _ = self.db[Collections.involved_accounts_all_top_list].bulk_write(
+                    local_queue
+                )
+
+                # update top_list status retrieval
+                query = {
+                    "_id": "heartbeat_last_timestamp_involved_accounts_all_top_list"
+                }
+                self.db[Collections.helpers].replace_one(
+                    query,
+                    {
+                        "_id": "heartbeat_last_timestamp_involved_accounts_all_top_list",
+                        "timestamp": dt.datetime.utcnow(),
+                    },
+                    upsert=True,
+                )
+
+            except Exception as e:
+                self.tooter.send(
+                    channel=TooterChannel.NOTIFIER,
+                    message=f"Failed to get involved_accounts_all_top_list. Error: {e}",
+                    notifier_type=TooterType.REQUESTS_ERROR,
+                )
+
+            await asyncio.sleep(3 * 60)
 
     # currently not used
     def lookout_for_account_transaction(

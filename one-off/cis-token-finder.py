@@ -18,9 +18,13 @@ from sharingiscaring.enums import NET
 from sharingiscaring.tooter import Tooter
 from pymongo import ASCENDING, DESCENDING, ReplaceOne
 from pymongo.collection import Collection
+from pymongo.database import Database
 from sharingiscaring.GRPCClient.CCD_Types import *
 from rich import print
 from env import *
+from rich.console import Console
+
+console = Console()
 
 tooter: Tooter = Tooter(
     ENVIRONMENT, BRANCH, NOTIFIER_API_TOKEN, API_TOKEN, FASTMAIL_TOKEN
@@ -37,7 +41,7 @@ mongodb = MongoDB(
 
 def save_mint(
     db_to_use: dict[Collections, Collection],
-    instance: MongoTypeInstance,
+    instance_name: str,
     result: mintEvent,
 ):
     # steps
@@ -45,10 +49,10 @@ def save_mint(
     # 2. Create/update token holder's account in tokens_accounts
 
     # Step 1
-    token_address = f"{instance.id}-{result.token_id}"
+    token_address = f"{instance_name}-{result.token_id}"
     d = {
         "_id": token_address,
-        "contract": instance.id,
+        "contract": instance_name,
         "token_id": result.token_id,
         "token_amount": str(result.token_amount),
     }
@@ -72,7 +76,7 @@ def save_mint(
     current_tokens = d["tokens"]
     current_tokens[token_address] = {
         "token_address": token_address,
-        "contract": instance.id,
+        "contract": instance_name,
         "token_id": result.token_id,
         "token_amount": str(result.token_amount),
     }
@@ -91,7 +95,7 @@ def save_mint(
 
 def save_metadata(
     db_to_use: dict[Collections, Collection],
-    instance: MongoTypeInstance,
+    instance_name: str,
     result: tokenMetadataEvent,
 ):
     # steps
@@ -99,13 +103,15 @@ def save_metadata(
     # 2. update metadata
 
     # Step 1
-    token_address = f"{instance.id}-{result.token_id}"
+    token_address = f"{instance_name}-{result.token_id}"
     d = db_to_use[Collections.tokens_token_addresses].find_one({"_id": token_address})
     if not d:
-        print(f"Huh? {token_address} isn't minted yet, but is now updating metadata?")
+        console.log(
+            f"Huh? {token_address} isn't minted yet, but is now updating metadata?"
+        )
         d = {
             "_id": token_address,
-            "contract": instance.id,
+            "contract": instance_name,
             "token_id": result.token_id,
         }
     d.update(
@@ -126,14 +132,14 @@ def save_metadata(
 
 def save_transfer(
     db_to_use: dict[Collections, Collection],
-    instance: MongoTypeInstance,
+    instance_name: str,
     result: transferEvent,
 ):
     # steps
     # 1. update from address account
     # 2. Create/update to account
 
-    token_address = f"{instance.id}-{result.token_id}"
+    token_address = f"{instance_name}-{result.token_id}"
 
     # Step 1
     # lookup existing account
@@ -150,7 +156,7 @@ def save_transfer(
         )
         current_tokens[token_address] = current_token
     else:
-        print(
+        console.log(
             f"{result.from_address} is transferring a token at {token_address} that is doesn't own?"
         )
 
@@ -184,7 +190,7 @@ def save_transfer(
     else:
         current_tokens[token_address] = {
             "token_address": token_address,
-            "contract": instance.id,
+            "contract": instance_name,
             "token_id": result.token_id,
             "token_amount": str(result.token_amount),
         }
@@ -203,13 +209,14 @@ def save_transfer(
 
 def save_burn(
     db_to_use: dict[Collections, Collection],
-    instance: MongoTypeInstance,
+    instance_name: str,
     result: burnEvent,
 ):
     # steps
-    # 1. lower token amount for from_ address
+    # 1. Lower token amount for from_ address
+    # 2. Lower token amount on actual token address
 
-    token_address = f"{instance.id}-{result.token_id}"
+    token_address = f"{instance_name}-{result.token_id}"
 
     # Step 1
     # lookup existing account
@@ -226,7 +233,7 @@ def save_burn(
         )
         current_tokens[token_address] = current_token
     else:
-        print(
+        console.log(
             f"{result.from_address} is burning a token at {token_address} that is doesn't own?"
         )
 
@@ -242,28 +249,48 @@ def save_burn(
         ]
     )
 
+    # step 2
+    d = db_to_use[Collections.tokens_token_addresses].find_one({"_id": token_address})
+    d.update(
+        {
+            "token_amount": str(int(d["token_amount"]) - result.token_amount),
+        }
+    )
+    _ = db_to_use[Collections.tokens_token_addresses].bulk_write(
+        [
+            ReplaceOne(
+                {"_id": token_address},
+                replacement=d,
+                upsert=True,
+            )
+        ]
+    )
 
-def process_event(cis: CIS, db_to_use, instance, event):
+
+def process_event(cis: CIS, db_to_use, instance_name: str, event):
     tag_, result = cis.process_log_events(event)
     if result:
         if tag_ == 255:
-            save_transfer(db_to_use, instance, result)
+            save_transfer(db_to_use, instance_name, result)
         if tag_ == 254:
-            save_mint(db_to_use, instance, result)
+            save_mint(db_to_use, instance_name, result)
         if tag_ == 253:
-            save_burn(db_to_use, instance, result)
+            save_burn(db_to_use, instance_name, result)
         if tag_ == 252:
             # operatorUpdateEvent
             pass
         if tag_ == 251:
-            save_metadata(db_to_use, instance, result)
+            save_metadata(db_to_use, instance_name, result)
 
     else:
-        print(f"{instance.id} gave error with tag {tag_} for event {event}.")
+        console.log(f"{instance_name} gave error with tag {tag_} for event {event}.")
 
 
-net = "testnet"
-db_to_use = mongodb.testnet if net == "testnet" else mongodb.mainnet
+net = "mainnet"
+db_to_use: Database = mongodb.testnet if net == "testnet" else mongodb.mainnet
+db_to_use_for_views: Database = (
+    mongodb.testnet_db if net == "testnet" else mongodb.mainnet_db
+)
 
 # REMOVE in HEARTBEAT
 db_to_use[Collections.tokens_accounts].delete_many({})
@@ -271,7 +298,34 @@ db_to_use[Collections.tokens_token_addresses].delete_many({})
 # REMOVE in HEARTBEAT
 
 
-result = [MongoTypeInstance(**x) for x in db_to_use[Collections.instances].find()]
+collections_in_db = db_to_use_for_views.list_collection_names()
+if "instances_view" in collections_in_db:
+    db_to_use_for_views["instances_view"].drop()
+db_to_use_for_views.command(
+    {
+        "create": "instances_view",
+        "viewOn": "instances",
+        "pipeline": [{"$match": {"_id": {"$exists": True}}}],
+    }
+)
+
+if "involved_contracts_view" in collections_in_db:
+    db_to_use_for_views["involved_contracts_view"].drop()
+db_to_use_for_views.command(
+    {
+        "create": "involved_contracts_view",
+        "viewOn": "involved_contracts",
+        "pipeline": [{"$match": {"_id": {"$exists": True}}}],
+    }
+)
+last_height = list(
+    db_to_use_for_views["involved_contracts_view"]
+    .find()
+    .sort("block_height", DESCENDING)
+    .limit(1)
+)[0]["block_height"]
+console.log(f"Last block height from involved contracts: {last_height:,.0f}.")
+result = [MongoTypeInstance(**x) for x in db_to_use_for_views["instances_view"].find()]
 
 
 for index, instance in enumerate(result):
@@ -283,18 +337,19 @@ for index, instance in enumerate(result):
             cis = CIS(grpcclient, index, subindex, entrypoint, NET(net))
             supports_cis_2 = cis.supports_standard(StandardIdentifiers.CIS_2)
             if supports_cis_2:
-                print(
+                console.log(
                     f"{instance.v1.name}: {instance.id}: Supports CIS-2 = {supports_cis_2}"
                 )
 
             # now look up transactions with this contract
             result = [
                 MongoTypeInvolvedContract(**x)
-                for x in db_to_use[Collections.involved_contracts].find(
+                for x in db_to_use_for_views["involved_contracts_view"].find(
                     {"contract": instance.id}
                 )
             ]
             tx_hashes = [x.id.split("-")[0] for x in result]
+            console.log(f"{len(tx_hashes)=} for {instance.id}.")
             int_result = (
                 db_to_use[Collections.transactions]
                 .find({"_id": {"$in": tx_hashes}})
@@ -307,7 +362,7 @@ for index, instance in enumerate(result):
                     for (
                         event
                     ) in tx.account_transaction.effects.contract_initialized.events:
-                        process_event(cis, db_to_use, instance, event)
+                        process_event(cis, db_to_use, instance.id, event)
 
                 if tx.account_transaction.effects.contract_update_issued:
                     for (
@@ -316,13 +371,16 @@ for index, instance in enumerate(result):
                         if effect:
                             if effect.interrupted:
                                 for event in effect.interrupted.events:
-                                    process_event(cis, db_to_use, instance, event)
+                                    process_event(cis, db_to_use, instance.id, event)
                             if effect.updated:
                                 for event in effect.updated.events:
-                                    process_event(cis, db_to_use, instance, event)
+                                    process_event(cis, db_to_use, instance.id, event)
 
             pass
 
+console.log(
+    f"Processed up to {last_height:,.0f}. Now start heartbeat from this point by adjusting the value in helpers."
+)
 # heights = [x["block_info"]["height"] for x in result]
 
 # d = {"_id": "special_purpose_block_request", "heights": heights}
