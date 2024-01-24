@@ -1,7 +1,9 @@
 # ruff: noqa: F403, F405, E402, E501, E722
 from enum import Enum
 from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.mongodb import Collections
+from sharingiscaring.mongodb import Collections, MongoTypeInstance
+from sharingiscaring.cis import CIS, StandardIdentifiers
+from sharingiscaring.enums import NET
 import io
 import chardet
 
@@ -27,6 +29,11 @@ class Queue(Enum):
     provenance_contracts_to_add = 10
     impacted_addresses = 11
     special_events = 12
+
+
+class ProvenanceMintAddress(Enum):
+    mainnet = "3suZfxcME62akyyss72hjNhkzXeZuyhoyQz1tvNSXY2yxvwo53"
+    testnet = "4AuT5RRmBwcdkLMA6iVjxTDb1FQmxwAh3wHBS22mggWL8xH6s3"
 
 
 class Utils:
@@ -114,3 +121,238 @@ class Utils:
                 return True, "Decoding failure..."
         except:
             return True, "Decoding failure..."
+
+    def decode_cis_logged_events(
+        self,
+        tx: CCD_BlockItemSummary,
+        block_info: CCD_BlockInfo,
+        special_purpose: bool = False,
+    ):
+        """
+        This method takes a transaction as input and tries to find
+        CIS logged events (mint, transfer, metadata, operator and burn).
+        Logged events are stored in a collection. Depending on the tag,
+        the logged event is executed and the result is stored in the
+        collections accounts and token_addresses.
+        """
+
+        # this is the ordering of effects as encountered in the transaction
+        ordering = 0
+        logged_events = []
+        token_addresses_to_redo_accounting = []
+        provenance_contracts_to_add = []
+        if not tx.account_transaction:
+            return (
+                logged_events,
+                token_addresses_to_redo_accounting,
+                provenance_contracts_to_add,
+            )
+
+        if tx.account_transaction.effects.contract_initialized:
+            contract_index = (
+                tx.account_transaction.effects.contract_initialized.address.index
+            )
+            contract_subindex = (
+                tx.account_transaction.effects.contract_initialized.address.subindex
+            )
+            instance_address = f"<{contract_index},{contract_subindex}>"
+            entrypoint = f"{tx.account_transaction.effects.contract_initialized.init_name[5:]}.supports"
+            cis = self.init_cis(contract_index, contract_subindex, entrypoint)
+            supports_cis_1_2 = cis.supports_standards(
+                [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
+            )
+            if supports_cis_1_2:
+                for index, event in enumerate(
+                    tx.account_transaction.effects.contract_initialized.events
+                ):
+                    ordering += 1
+                    tag, logged_event, token_address = cis.process_event(
+                        # cis,
+                        self.db,
+                        instance_address,
+                        event,
+                        block_info.height,
+                        tx.hash,
+                        tx.index,
+                        ordering,
+                        f"initialized-{tx.index}-{index}",
+                    )
+                    if logged_event:
+                        logged_events.append(logged_event)
+
+                    if special_purpose:
+                        token_addresses_to_redo_accounting.append(token_address)
+
+                    if (tag == 254) and (
+                        tx.account_transaction.sender
+                        == ProvenanceMintAddress[self.net].value
+                    ):
+                        contract_to_add = token_address.split("-")[0]
+                        provenance_contracts_to_add.append(contract_to_add)
+
+        if tx.account_transaction.effects.contract_update_issued:
+            for effect_index, effect in enumerate(
+                tx.account_transaction.effects.contract_update_issued.effects
+            ):
+                if effect.interrupted:
+                    contract_index = effect.interrupted.address.index
+                    contract_subindex = effect.interrupted.address.subindex
+                    instance_address = f"<{contract_index},{contract_subindex}>"
+                    try:
+                        instance = MongoTypeInstance(
+                            **self.db[Collections.instances].find_one(
+                                {"_id": instance_address}
+                            )
+                        )
+                    except:
+                        instance = None
+                    if instance and instance.v1:
+                        entrypoint = instance.v1.name[5:] + ".supports"
+                        cis = self.init_cis(
+                            contract_index, contract_subindex, entrypoint
+                        )
+                        supports_cis_1_2 = cis.supports_standards(
+                            [
+                                StandardIdentifiers.CIS_1,
+                                StandardIdentifiers.CIS_2,
+                            ]
+                        )
+                        if supports_cis_1_2:
+                            for index, event in enumerate(effect.interrupted.events):
+                                ordering += 1
+                                (
+                                    tag,
+                                    logged_event,
+                                    token_address,
+                                ) = cis.process_event(
+                                    self.db,
+                                    instance_address,
+                                    event,
+                                    block_info.height,
+                                    tx.hash,
+                                    tx.index,
+                                    ordering,
+                                    f"interrupted-{tx.index}-{effect_index}-{index}",
+                                )
+                                if logged_event:
+                                    logged_events.append(logged_event)
+
+                                if special_purpose:
+                                    token_addresses_to_redo_accounting.append(
+                                        token_address
+                                    )
+
+                                if (tag == 254) and (
+                                    tx.account_transaction.sender
+                                    == ProvenanceMintAddress[self.net].value
+                                ):
+                                    contract_to_add = token_address.split("-")[0]
+                                    provenance_contracts_to_add.append(contract_to_add)
+                if effect.updated:
+                    contract_index = effect.updated.address.index
+                    contract_subindex = effect.updated.address.subindex
+                    instance_address = f"<{contract_index},{contract_subindex}>"
+                    entrypoint = f"{effect.updated.receive_name.split('.')[0]}.supports"
+                    cis = CIS(
+                        self.grpcclient,
+                        contract_index,
+                        contract_subindex,
+                        entrypoint,
+                        NET(self.net),
+                    )
+                    supports_cis_1_2 = cis.supports_standards(
+                        [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
+                    )
+                    if supports_cis_1_2:
+                        for index, event in enumerate(effect.updated.events):
+                            ordering += 1
+                            (
+                                tag,
+                                logged_event,
+                                token_address,
+                            ) = cis.process_event(
+                                # cis,
+                                self.db,
+                                instance_address,
+                                event,
+                                block_info.height,
+                                tx.hash,
+                                tx.index,
+                                ordering,
+                                f"updated-{tx.index}-{effect_index}-{index}",
+                            )
+                            if logged_event:
+                                logged_events.append(logged_event)
+
+                            if special_purpose:
+                                token_addresses_to_redo_accounting.append(token_address)
+
+                            if (tag == 254) and (
+                                tx.account_transaction.sender
+                                == ProvenanceMintAddress[self.net].value
+                            ):
+                                contract_to_add = token_address.split("-")[0]
+                                provenance_contracts_to_add.append(contract_to_add)
+
+        return (
+            logged_events,
+            token_addresses_to_redo_accounting,
+            provenance_contracts_to_add,
+        )
+
+    # currently not used
+    def lookout_for_account_transaction(
+        self, block_info: CCD_BlockInfo, tx: CCD_BlockItemSummary
+    ):
+        if tx.account_transaction:
+            if tx.account_transaction.effects.data_registered:
+                query = {"_id": "last_known_data_registered"}
+                self.db[Collections.helpers].replace_one(
+                    query,
+                    {
+                        "_id": "last_known_data_registered",
+                        "tx_hash": tx.hash,
+                        "hash": block_info.hash,
+                        "height": block_info.height,
+                    },
+                    upsert=True,
+                )
+
+            elif tx.account_transaction.effects.account_transfer:
+                query = {"_id": "last_known_transfer"}
+                self.db[Collections.helpers].replace_one(
+                    query,
+                    {
+                        "_id": "last_known_transfer",
+                        "tx_hash": tx.hash,
+                        "hash": block_info.hash,
+                        "height": block_info.height,
+                    },
+                    upsert=True,
+                )
+
+            if tx.account_transaction.effects.baker_configured:
+                query = {"_id": "last_known_baker_configured"}
+                self.db[Collections.helpers].replace_one(
+                    query,
+                    {
+                        "_id": "last_known_baker_configured",
+                        "tx_hash": tx.hash,
+                        "hash": block_info.hash,
+                        "height": block_info.height,
+                    },
+                    upsert=True,
+                )
+
+        elif tx.account_creation:
+            query = {"_id": "last_known_account_creation"}
+            self.db[Collections.helpers].replace_one(
+                query,
+                {
+                    "_id": "last_known_account_creation",
+                    "tx_hash": tx.hash,
+                    "hash": block_info.hash,
+                    "height": block_info.height,
+                },
+                upsert=True,
+            )

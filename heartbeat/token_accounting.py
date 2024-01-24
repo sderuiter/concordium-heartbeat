@@ -118,6 +118,71 @@ class TokenAccounting(Utils):
 
             await asyncio.sleep(1)
 
+    async def special_purpose_token_accounting(self):
+        """
+        This method looks at all token_addresses and then inspects the
+        last_height_processed property. If it's set to -1, this means
+        we need to redo token accounting for this token_address.
+        It's set to -1 if a special purpose block with cis events is
+        detected.
+        """
+        while True:
+            try:
+                result = [
+                    MongoTypeTokenAddress(**x)
+                    for x in self.db[Collections.tokens_token_addresses].find(
+                        {"last_height_processed": -1}
+                    )
+                ]
+
+                token_addresses_to_process = [x.id for x in result]
+
+                # Logged events are ordered by block_height, then by
+                # transaction index (tx_index) and finally by event index
+                # (ordering).
+                for token_address in token_addresses_to_process:
+                    events_for_token_address = [
+                        MongoTypeLoggedEvent(**x)
+                        for x in self.db[Collections.tokens_logged_events]
+                        .find({"token_address": token_address})
+                        .sort(
+                            [
+                                ("block_height", ASCENDING),
+                                ("tx_index", ASCENDING),
+                                ("ordering", ASCENDING),
+                            ]
+                        )
+                    ]
+                    events_by_token_address = {}
+                    events_by_token_address[token_address] = events_for_token_address
+                    # Only continue if there are logged events to process...
+                    if len(events_for_token_address) > 0:
+                        # When all logged events are processed,
+                        # 'token_accounting_last_processed_block' is set to
+                        # 'token_accounting_last_processed_block_when_done'
+                        # such that next iteration, we will not be re-processing
+                        # logged events we already have processed.
+                        # token_accounting_last_processed_block_when_done = max(
+                        #     [x.block_height for x in events_for_token_address]
+                        # )
+
+                        console.log(
+                            f"Token accounting for Special purpose: Redo {token_address} with {len(events_for_token_address):,.0f} logged events on {self.net}."
+                        )
+
+                        # Looping through all token_addresses that have logged_events
+                        # for log in events_for_token_address:
+                        self.token_accounting_for_token_address(
+                            token_address,
+                            events_by_token_address,
+                            -1,
+                        )
+
+            except Exception as e:
+                console.log(e)
+
+            await asyncio.sleep(10)
+
     async def get_redo_token_addresses(self):
         """
         This methods gets token_addresses that need to have their
