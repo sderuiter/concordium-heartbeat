@@ -314,10 +314,43 @@ class Utils:
             provenance_contracts_to_add,
         )
 
-    async def update_involved_accounts_all_top_list(self):
+    async def update_impacted_addresses_all_top_list(self):
         while True:
             try:
+                # this is the block we last processed making the top list
+                bot_last_processed_block_for_top_list = self.db[
+                    Collections.helpers
+                ].find_one(
+                    {
+                        "_id": "heartbeat_last_block_processed_impacted_addresses_all_top_list"
+                    }
+                )
+                bot_last_processed_block_for_top_list_height = (
+                    bot_last_processed_block_for_top_list["height"]
+                )
+
+                # this is the last finalized block in the collection of blocks
+                bot_last_processed_block = self.db[Collections.helpers].find_one(
+                    {"_id": "bot_last_processed_block"}
+                )
+                bot_last_processed_block_height = bot_last_processed_block["height"]
+
                 pipeline = [
+                    {
+                        "$match": {
+                            "block_height": {
+                                "$gt": bot_last_processed_block_for_top_list_height
+                            }
+                        }
+                    },
+                    {
+                        "$match": {
+                            "block_height": {"$lte": bot_last_processed_block_height}
+                        }
+                    },
+                    {  # this filters out account rewards, as they are special events
+                        "$match": {"tx_hash": {"$exists": True}},
+                    },
                     {
                         "$group": {
                             "_id": "$impacted_address_canonical",
@@ -329,26 +362,46 @@ class Utils:
                 result = (
                     await self.motordb[Collections.impacted_addresses]
                     .aggregate(pipeline)
-                    .to_list(50)
+                    .to_list(100)
                 )
 
                 local_queue = []
+
+                # get previously stored results
+                previous_result = self.db[
+                    Collections.impacted_addresses_all_top_list
+                ].find({})
+                previous_accounts_dict = {x["_id"]: x["count"] for x in previous_result}
+
                 for r in result:
+                    if previous_accounts_dict.get(r["_id"]):
+                        r["count"] += previous_accounts_dict.get(r["_id"])
                     local_queue.append(ReplaceOne({"_id": r["_id"]}, r, upsert=True))
 
-                _ = self.db[Collections.involved_accounts_all_top_list].delete_many({})
-                _ = self.db[Collections.involved_accounts_all_top_list].bulk_write(
+                # _ = self.db[Collections.impacted_addresses_all_top_list].delete_many({})
+                _ = self.db[Collections.impacted_addresses_all_top_list].bulk_write(
                     local_queue
                 )
 
                 # update top_list status retrieval
                 query = {
-                    "_id": "heartbeat_last_timestamp_involved_accounts_all_top_list"
+                    "_id": "heartbeat_last_block_processed_impacted_addresses_all_top_list"
                 }
                 self.db[Collections.helpers].replace_one(
                     query,
                     {
-                        "_id": "heartbeat_last_timestamp_involved_accounts_all_top_list",
+                        "_id": "heartbeat_last_block_processed_impacted_addresses_all_top_list",
+                        "height": bot_last_processed_block_height,
+                    },
+                    upsert=True,
+                )
+                query = {
+                    "_id": "heartbeat_last_timestamp_impacted_addresses_all_top_list"
+                }
+                self.db[Collections.helpers].replace_one(
+                    query,
+                    {
+                        "_id": "heartbeat_last_timestamp_impacted_addresses_all_top_list",
                         "timestamp": dt.datetime.utcnow(),
                     },
                     upsert=True,
@@ -357,7 +410,7 @@ class Utils:
             except Exception as e:
                 self.tooter.send(
                     channel=TooterChannel.NOTIFIER,
-                    message=f"Failed to get involved_accounts_all_top_list. Error: {e}",
+                    message=f"Failed to get impacted_addresses_all_top_list. Error: {e}",
                     notifier_type=TooterType.REQUESTS_ERROR,
                 )
 

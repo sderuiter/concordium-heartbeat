@@ -75,7 +75,7 @@ def main():
     loop.create_task(heartbeat.special_purpose_token_accounting())
 
     loop.create_task(heartbeat.update_nodes_from_dashboard())
-    loop.create_task(heartbeat.update_involved_accounts_all_top_list())
+    loop.create_task(heartbeat.update_impacted_addresses_all_top_list())
 
     loop.create_task(heartbeat.update_exchange_rates_for_tokens())
     loop.create_task(heartbeat.update_exchange_rates_historical_for_tokens())
