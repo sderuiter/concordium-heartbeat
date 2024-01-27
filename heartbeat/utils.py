@@ -414,7 +414,7 @@ class Utils:
                     notifier_type=TooterType.REQUESTS_ERROR,
                 )
 
-            await asyncio.sleep(3 * 60)
+            await asyncio.sleep(1 * 60)
 
     # currently not used
     def lookout_for_account_transaction(
