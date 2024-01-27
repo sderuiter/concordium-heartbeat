@@ -379,33 +379,34 @@ class Utils:
                     local_queue.append(ReplaceOne({"_id": r["_id"]}, r, upsert=True))
 
                 # _ = self.db[Collections.impacted_addresses_all_top_list].delete_many({})
-                _ = self.db[Collections.impacted_addresses_all_top_list].bulk_write(
-                    local_queue
-                )
+                if len(local_queue) > 0:
+                    _ = self.db[Collections.impacted_addresses_all_top_list].bulk_write(
+                        local_queue
+                    )
 
-                # update top_list status retrieval
-                query = {
-                    "_id": "heartbeat_last_block_processed_impacted_addresses_all_top_list"
-                }
-                self.db[Collections.helpers].replace_one(
-                    query,
-                    {
-                        "_id": "heartbeat_last_block_processed_impacted_addresses_all_top_list",
-                        "height": bot_last_processed_block_height,
-                    },
-                    upsert=True,
-                )
-                query = {
-                    "_id": "heartbeat_last_timestamp_impacted_addresses_all_top_list"
-                }
-                self.db[Collections.helpers].replace_one(
-                    query,
-                    {
-                        "_id": "heartbeat_last_timestamp_impacted_addresses_all_top_list",
-                        "timestamp": dt.datetime.utcnow(),
-                    },
-                    upsert=True,
-                )
+                    # update top_list status retrieval
+                    query = {
+                        "_id": "heartbeat_last_block_processed_impacted_addresses_all_top_list"
+                    }
+                    self.db[Collections.helpers].replace_one(
+                        query,
+                        {
+                            "_id": "heartbeat_last_block_processed_impacted_addresses_all_top_list",
+                            "height": bot_last_processed_block_height,
+                        },
+                        upsert=True,
+                    )
+                    query = {
+                        "_id": "heartbeat_last_timestamp_impacted_addresses_all_top_list"
+                    }
+                    self.db[Collections.helpers].replace_one(
+                        query,
+                        {
+                            "_id": "heartbeat_last_timestamp_impacted_addresses_all_top_list",
+                            "timestamp": dt.datetime.utcnow(),
+                        },
+                        upsert=True,
+                    )
 
             except Exception as e:
                 self.tooter.send(
