@@ -1,6 +1,8 @@
 # ruff: noqa: F403, F405, E402, E501, E722
 from .utils import Utils, Queue
 from sharingiscaring.mongodb import Collections
+from sharingiscaring.tooter import TooterChannel, TooterType
+
 from pymongo.collection import Collection
 from env import *
 import asyncio
@@ -151,8 +153,9 @@ class SendToMongo(Utils):
                     current_content = self.db[Collections.tokens_tags].find_one(query)
                     if not current_content:
                         current_content = {
-                            "_id": "provenance",
+                            "_id": "provenance-tags",
                             "contracts": [],
+                            "token_type": "non-fungible",
                             "tag_template": True,
                             "single_use_token": False,
                         }
@@ -171,6 +174,11 @@ class SendToMongo(Utils):
                     )
                     console.log(
                         f"Added {len(self.queues[Queue.provenance_contracts_to_add]):,.0f} contracts to provenance for {self.net}."
+                    )
+                    self.tooter.send(
+                        channel=TooterChannel.NOTIFIER,
+                        message=f"Added {' | '.join(self.queues[Queue.provenance_contracts_to_add]):,.0f} contracts to provenance-tags for {self.net}.",
+                        notifier_type=TooterType.REQUESTS_ERROR,
                     )
                     self.queues[Queue.provenance_contracts_to_add] = []
                 # this will only be set if the above store methods do not fail.
