@@ -330,10 +330,12 @@ class Utils:
                 )
 
                 # this is the last finalized block in the collection of blocks
-                bot_last_processed_block = self.db[Collections.helpers].find_one(
-                    {"_id": "bot_last_processed_block"}
+                heartbeat_last_processed_block = self.db[Collections.helpers].find_one(
+                    {"_id": "heartbeat_last_processed_block"}
                 )
-                bot_last_processed_block_height = bot_last_processed_block["height"]
+                heartbeat_last_processed_block_height = heartbeat_last_processed_block[
+                    "height"
+                ]
 
                 pipeline = [
                     {
@@ -345,7 +347,9 @@ class Utils:
                     },
                     {
                         "$match": {
-                            "block_height": {"$lte": bot_last_processed_block_height}
+                            "block_height": {
+                                "$lte": heartbeat_last_processed_block_height
+                            }
                         }
                     },
                     {  # this filters out account rewards, as they are special events
@@ -392,7 +396,7 @@ class Utils:
                         query,
                         {
                             "_id": "heartbeat_last_block_processed_impacted_addresses_all_top_list",
-                            "height": bot_last_processed_block_height,
+                            "height": heartbeat_last_processed_block_height,
                         },
                         upsert=True,
                     )

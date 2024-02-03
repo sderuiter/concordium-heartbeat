@@ -44,12 +44,12 @@ def add_date_to_ia(ia: MongoImpactedAddress, heights, block_end_of_day_dict):
     return ia
 
 
-net = "mainnet"
+net = "testnet"
 db_to_use = mongodb.testnet if net == "testnet" else mongodb.mainnet
 
 
 result = list(
-    mongodb.mainnet[Collections.blocks_per_day].find(
+    db_to_use[Collections.blocks_per_day].find(
         filter={},
         projection={
             "_id": 0,
@@ -104,7 +104,7 @@ while len(ll) > 0:
                 body=f"Block: {index:,.0f}: Processed {len(queue):,.0f} IAs in {(end-start).total_seconds():,.0f} sec.",
                 notifier_type=TooterType.INFO,
             )
-            _ = mongodb.mainnet[Collections.impacted_addresses].bulk_write(queue)
+            _ = db_to_use[Collections.impacted_addresses].bulk_write(queue)
             queue = []
             start = dt.datetime.now()
 
@@ -114,4 +114,4 @@ while len(ll) > 0:
         .limit(20000)
     )
     ll = list(result)
-_ = mongodb.mainnet[Collections.impacted_addresses].bulk_write(queue)
+_ = db_to_use[Collections.impacted_addresses].bulk_write(queue)
