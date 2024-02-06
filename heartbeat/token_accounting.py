@@ -229,16 +229,16 @@ class TokenAccounting(Utils):
                             token_accounting_last_processed_block_when_done
                         )
 
-                    self.send_token_queues_to_mongo()
+                    self.send_token_queues_to_mongo(0)
 
             except Exception as e:
                 console.log(e)
 
             await asyncio.sleep(1)
 
-    def send_token_queues_to_mongo(self):
+    def send_token_queues_to_mongo(self, limit: int=0):
         self.queues: dict[Collections, list]
-        if len(self.queues[Queue.token_addresses]) > 0:
+        if len(self.queues[Queue.token_addresses]) > limit:
             _ = self.db[Collections.tokens_token_addresses].bulk_write(
                 self.queues[Queue.token_addresses]
             )
@@ -248,7 +248,7 @@ class TokenAccounting(Utils):
 
             self.queues[Queue.token_addresses] = []
 
-        if len(self.queues[Queue.token_accounts]) > 0:
+        if len(self.queues[Queue.token_accounts]) > limit:
             _ = self.db[Collections.tokens_accounts].bulk_write(
                 self.queues[Queue.token_accounts]
             )
@@ -318,7 +318,8 @@ class TokenAccounting(Utils):
                             -1,
                         )
 
-                    self.send_token_queues_to_mongo()
+                    self.send_token_queues_to_mongo(50)
+                self.send_token_queues_to_mongo(0)
 
             except Exception as e:
                 console.log(e)
@@ -422,6 +423,9 @@ class TokenAccounting(Utils):
             token_address_as_class
         )
         self.queues[Queue.token_accounts].extend(queue)
+
+        # already see if we need to send to mongo to keep memory down.
+        self.send_token_queues_to_mongo(50)
 
         # Perform a last check if there are accounts that no longer
         # have this token. They need to have this token removed from
