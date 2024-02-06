@@ -238,7 +238,7 @@ class TokenAccounting(Utils):
 
     def send_token_queues_to_mongo(self, limit: int = 0):
         self.queues: dict[Collections, list]
-        if len(self.queues[Queue.token_addresses]) >= limit:
+        if len(self.queues[Queue.token_addresses]) > limit:
             _ = self.db[Collections.tokens_token_addresses].bulk_write(
                 self.queues[Queue.token_addresses]
             )
@@ -248,7 +248,7 @@ class TokenAccounting(Utils):
 
             self.queues[Queue.token_addresses] = []
 
-        if len(self.queues[Queue.token_accounts]) >= limit:
+        if len(self.queues[Queue.token_accounts]) > limit:
             _ = self.db[Collections.tokens_accounts].bulk_write(
                 self.queues[Queue.token_accounts]
             )
@@ -318,7 +318,7 @@ class TokenAccounting(Utils):
                             -1,
                         )
 
-                    self.send_token_queues_to_mongo(50)
+                    self.send_token_queues_to_mongo(49)
                 self.send_token_queues_to_mongo(0)
 
             except Exception as e:
@@ -425,7 +425,7 @@ class TokenAccounting(Utils):
         self.queues[Queue.token_accounts].extend(queue)
 
         # already see if we need to send to mongo to keep memory down.
-        self.send_token_queues_to_mongo(50)
+        self.send_token_queues_to_mongo(49)
 
         # Perform a last check if there are accounts that no longer
         # have this token. They need to have this token removed from
