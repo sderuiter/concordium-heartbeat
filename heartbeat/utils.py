@@ -7,6 +7,7 @@ from sharingiscaring.tooter import TooterChannel, TooterType
 from sharingiscaring.enums import NET
 from pymongo import ReplaceOne
 import io
+import operator
 import asyncio
 import chardet
 
@@ -35,8 +36,11 @@ class Queue(Enum):
 
 
 class ProvenanceMintAddress(Enum):
-    mainnet = "3suZfxcME62akyyss72hjNhkzXeZuyhoyQz1tvNSXY2yxvwo53"
-    testnet = "4AuT5RRmBwcdkLMA6iVjxTDb1FQmxwAh3wHBS22mggWL8xH6s3"
+    mainnet = ["3suZfxcME62akyyss72hjNhkzXeZuyhoyQz1tvNSXY2yxvwo53"]
+    testnet = [
+        "4AuT5RRmBwcdkLMA6iVjxTDb1FQmxwAh3wHBS22mggWL8xH6s3",
+        "4s3QS7Vdp7b6yrLngKQwCQcexKVQLKifcGKgmVXoH6wffZMQhM",
+    ]
 
 
 class Utils:
@@ -199,7 +203,7 @@ class Utils:
 
                     if (tag == 254) and (
                         tx.account_transaction.sender
-                        == ProvenanceMintAddress[self.net].value
+                        in ProvenanceMintAddress[self.net].value
                     ):
                         contract_to_add = token_address.split("-")[0]
                         provenance_contracts_to_add.append(contract_to_add)
@@ -258,7 +262,7 @@ class Utils:
 
                                 if (tag == 254) and (
                                     tx.account_transaction.sender
-                                    == ProvenanceMintAddress[self.net].value
+                                    in ProvenanceMintAddress[self.net].value
                                 ):
                                     contract_to_add = token_address.split("-")[0]
                                     provenance_contracts_to_add.append(contract_to_add)
@@ -303,7 +307,7 @@ class Utils:
 
                             if (tag == 254) and (
                                 tx.account_transaction.sender
-                                == ProvenanceMintAddress[self.net].value
+                                in ProvenanceMintAddress[self.net].value
                             ):
                                 contract_to_add = token_address.split("-")[0]
                                 provenance_contracts_to_add.append(contract_to_add)
@@ -388,6 +392,21 @@ class Utils:
                         local_queue
                     )
 
+                    # # remove results from collection such that only top 100
+                    # previous_result = self.db[
+                    #     Collections.impacted_addresses_all_top_list
+                    # ].find({})
+                    # previous_accounts_dict = {
+                    #     x["_id"]: x["count"] for x in previous_result
+                    # }
+                    # sorted_dict = dict(
+                    #     sorted(
+                    #         previous_accounts_dict.items(),
+                    #         key=operator.itemgetter(1),
+                    #         reverse=True,
+                    #     )
+                    # )
+                    # top_100_keys =
                     # update top_list status retrieval
                     query = {
                         "_id": "heartbeat_last_block_processed_impacted_addresses_all_top_list"
