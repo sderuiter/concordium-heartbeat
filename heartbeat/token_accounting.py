@@ -318,7 +318,7 @@ class TokenAccounting(Utils):
                             -1,
                         )
 
-                self.send_token_queues_to_mongo()
+                    self.send_token_queues_to_mongo()
 
             except Exception as e:
                 console.log(e)
