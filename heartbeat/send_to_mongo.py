@@ -149,7 +149,7 @@ class SendToMongo(Utils):
                     self.queues[Queue.token_addresses_to_redo_accounting] = []
 
                 if len(self.queues[Queue.provenance_contracts_to_add]) > 0:
-                    query = {"_id": "provenance"}
+                    query = {"_id": "provenance-tags"}
                     current_content = self.db[Collections.tokens_tags].find_one(query)
                     if not current_content:
                         current_content = {
