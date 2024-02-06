@@ -236,9 +236,9 @@ class TokenAccounting(Utils):
 
             await asyncio.sleep(1)
 
-    def send_token_queues_to_mongo(self, limit: int=0):
+    def send_token_queues_to_mongo(self, limit: int = 0):
         self.queues: dict[Collections, list]
-        if len(self.queues[Queue.token_addresses]) > limit:
+        if len(self.queues[Queue.token_addresses]) >= limit:
             _ = self.db[Collections.tokens_token_addresses].bulk_write(
                 self.queues[Queue.token_addresses]
             )
@@ -248,7 +248,7 @@ class TokenAccounting(Utils):
 
             self.queues[Queue.token_addresses] = []
 
-        if len(self.queues[Queue.token_accounts]) > limit:
+        if len(self.queues[Queue.token_accounts]) >= limit:
             _ = self.db[Collections.tokens_accounts].bulk_write(
                 self.queues[Queue.token_accounts]
             )
