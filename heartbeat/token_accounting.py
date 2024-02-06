@@ -146,7 +146,8 @@ class TokenAccounting(Utils):
     async def update_token_accounting(self):
         """
         This method takes logged events and processes them for
-        token accounting.
+        token accounting. Note that token accounting only processes events with
+        tag 255, 254, 253 and 251, which are transfer, mint, burn and metadata.
         The starting point is reading the helper document
         'token_accounting_last_processed_block', if that is either
         not there or set to -1, all token_addresses (and associated
@@ -203,9 +204,9 @@ class TokenAccounting(Utils):
                     # this token_address.
                     events_by_token_address: dict[str, list] = {}
                     for log in result:
-                        events_by_token_address[
-                            log.token_address
-                        ] = events_by_token_address.get(log.token_address, [])
+                        events_by_token_address[log.token_address] = (
+                            events_by_token_address.get(log.token_address, [])
+                        )
                         events_by_token_address[log.token_address].append(log)
 
                     console.log(
@@ -470,6 +471,7 @@ class TokenAccounting(Utils):
                 address_to_save = MongoTypeTokenHolderAddress(
                     **{
                         "_id": address,
+                        "account_address_canonical": address[:29],
                         "tokens": {},
                     }
                 )
@@ -532,9 +534,9 @@ class TokenAccounting(Utils):
         self, token_address_as_class: MongoTypeTokenAddress, log: MongoTypeLoggedEvent
     ):
         result = mintEvent(**log.result)
-        token_holders: dict[
-            CCD_AccountAddress, str
-        ] = token_address_as_class.token_holders
+        token_holders: dict[CCD_AccountAddress, str] = (
+            token_address_as_class.token_holders
+        )
         token_holders[result.to_address] = str(
             int(token_holders.get(result.to_address, "0")) + result.token_amount
         )
@@ -631,9 +633,9 @@ class TokenAccounting(Utils):
     ):
         result = transferEvent(**log.result)
         try:
-            token_holders: dict[
-                CCD_AccountAddress, str
-            ] = token_address_as_class.token_holders
+            token_holders: dict[CCD_AccountAddress, str] = (
+                token_address_as_class.token_holders
+            )
         except:
             console.log(
                 f"{result.tag}: {token_address_as_class.token_id} | {token_address_as_class} has no field token_holders?"
@@ -662,9 +664,9 @@ class TokenAccounting(Utils):
         self, token_address_as_class: MongoTypeTokenAddress, log: MongoTypeLoggedEvent
     ):
         result = burnEvent(**log.result)
-        token_holders: dict[
-            CCD_AccountAddress, str
-        ] = token_address_as_class.token_holders
+        token_holders: dict[CCD_AccountAddress, str] = (
+            token_address_as_class.token_holders
+        )
         try:
             token_holders[result.from_address] = str(
                 int(token_holders.get(result.from_address, "0")) - result.token_amount
