@@ -173,11 +173,11 @@ class SendToMongo(Utils):
                         upsert=True,
                     )
                     console.log(
-                        f"Added {len(self.queues[Queue.provenance_contracts_to_add]):,.0f} contracts to provenance for {self.net}."
+                        f"Added {len(list(set(self.queues[Queue.provenance_contracts_to_add]))):,.0f} contracts to provenance for {self.net}."
                     )
                     self.tooter.send(
                         channel=TooterChannel.NOTIFIER,
-                        message=f"Added {' | '.join(self.queues[Queue.provenance_contracts_to_add]):,.0f} contracts to provenance-tags for {self.net}.",
+                        message=f"Added {' | '.join(list(set(self.queues[Queue.provenance_contracts_to_add])))} contracts to provenance-tags for {self.net}.",
                         notifier_type=TooterType.REQUESTS_ERROR,
                     )
                     self.queues[Queue.provenance_contracts_to_add] = []
