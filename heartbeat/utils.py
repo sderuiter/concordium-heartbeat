@@ -33,6 +33,8 @@ class Queue(Enum):
     provenance_contracts_to_add = 10
     impacted_addresses = 11
     special_events = 12
+    token_accounts = 13
+    token_addresses = 14
 
 
 class ProvenanceMintAddress(Enum):

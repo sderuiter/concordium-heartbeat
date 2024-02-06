@@ -1,5 +1,5 @@
 # ruff: noqa: F403, F405, E402, E501, E722
-from .utils import Utils
+from .utils import Utils, Queue
 from sharingiscaring.GRPCClient.CCD_Types import *
 from sharingiscaring.mongodb import (
     Collections,
@@ -229,10 +229,34 @@ class TokenAccounting(Utils):
                             token_accounting_last_processed_block_when_done
                         )
 
+                    self.send_token_queues_to_mongo()
+
             except Exception as e:
                 console.log(e)
 
             await asyncio.sleep(1)
+
+    def send_token_queues_to_mongo(self):
+        self.queues: dict[Collections, list]
+        if len(self.queues[Queue.token_addresses]) > 0:
+            _ = self.db[Collections.tokens_token_addresses].bulk_write(
+                self.queues[Queue.token_addresses]
+            )
+            console.log(
+                f"Updated accounting for {len(self.queues[Queue.token_addresses])} token addresses."
+            )
+
+            self.queues[Queue.token_addresses] = []
+
+        if len(self.queues[Queue.token_accounts]) > 0:
+            _ = self.db[Collections.tokens_accounts].bulk_write(
+                self.queues[Queue.token_accounts]
+            )
+            console.log(
+                f"Updated accounting for {len(self.queues[Queue.token_accounts])} token accounts."
+            )
+
+            self.queues[Queue.token_accounts] = []
 
     async def special_purpose_token_accounting(self):
         """
@@ -294,6 +318,8 @@ class TokenAccounting(Utils):
                             -1,
                         )
 
+                        self.send_token_queues_to_mongo()
+
             except Exception as e:
                 console.log(e)
 
@@ -341,6 +367,7 @@ class TokenAccounting(Utils):
         events_by_token_address: dict,
         token_accounting_last_processed_block: int = -1,
     ):
+        self.queues: dict[Collections, list]
         queue = []
         # if we start at the beginning of the chain for token accounting
         # create an empty token address as class to start
@@ -382,15 +409,19 @@ class TokenAccounting(Utils):
         token_address_as_class.last_height_processed = log.block_height
 
         # Write the token_address_as_class back to the collection.
-        _ = self.db[Collections.tokens_token_addresses].bulk_write(
-            [self.mongo_save_for_token_address(token_address_as_class)]
+        self.queues[Queue.token_addresses].append(
+            self.mongo_save_for_token_address(token_address_as_class)
         )
+        # _ = self.db[Collections.tokens_token_addresses].bulk_write(
+        #     [self.mongo_save_for_token_address(token_address_as_class)]
+        # )
 
         # All logs for token_address are processed,
         # now copy state from token holders to _accounts
         queue = self.copy_token_holders_state_to_address_and_save(
             token_address_as_class
         )
+        self.queues[Queue.token_accounts].extend(queue)
 
         # Perform a last check if there are accounts that no longer
         # have this token. They need to have this token removed from
@@ -404,14 +435,17 @@ class TokenAccounting(Utils):
 
         # Only write to the collection if there are accounts that
         # have been modified.
-        if len(queue) > 0:
-            try:
-                _ = self.db[Collections.tokens_accounts].bulk_write(queue)
-                console.log(f"Updated token accounting for {len(queue)} accounts.")
-            except:
-                console.log(token_address_as_class)
-        else:
-            pass
+
+        ##### this bulk write is now located in the main loop
+
+        # if len(queue) > 0:
+        #     try:
+        #         _ = self.db[Collections.tokens_accounts].bulk_write(queue)
+        #         console.log(f"Updated token accounting for {len(queue)} accounts.")
+        #     except:
+        #         console.log(token_address_as_class)
+        # else:
+        #     pass
 
     def mongo_save_for_token_address(
         self, token_address_as_class: MongoTypeTokenAddress
