@@ -35,6 +35,7 @@ class Queue(Enum):
     special_events = 12
     token_accounts = 13
     token_addresses = 14
+    token_links = 15
 
 
 class ProvenanceMintAddress(Enum):
@@ -59,11 +60,11 @@ class Utils:
             return address.account
 
     def log_last_token_accounted_message_in_mongo(self, height: int):
-        query = {"_id": "token_accounting_last_processed_block"}
+        query = {"_id": "token_accounting_last_processed_block_v2"}
         self.db[Collections.helpers].replace_one(
             query,
             {
-                "_id": "token_accounting_last_processed_block",
+                "_id": "token_accounting_last_processed_block_v2",
                 "height": height,
             },
             upsert=True,
