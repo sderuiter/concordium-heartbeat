@@ -215,12 +215,16 @@ class TokenAccounting(Utils):
 
                     # Looping through all token_addresses that have logged_events
                     for token_address in list(events_by_token_address.keys()):
+                        start = dt.datetime.now()
                         self.token_accounting_for_token_address(
                             token_address,
                             events_by_token_address,
                             token_accounting_last_processed_block,
                         )
-
+                        end = dt.datetime.now()
+                        console.log(
+                            f"token_accounting_for_token_address for {token_address} took {(end-start).total_seconds():,.2f}"
+                        )
                         # Finally, after all logged events are processed for all
                         # token addresses, write back to the helper collection
                         # the block_height where to start next iteration of
