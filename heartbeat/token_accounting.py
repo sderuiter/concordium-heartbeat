@@ -20,7 +20,7 @@ from sharingiscaring.cis import (
 )
 import aiohttp
 from itertools import chain
-from pymongo import ReplaceOne, ASCENDING
+from pymongo import ReplaceOne, ASCENDING, DeleteOne
 from pymongo.collection import Collection
 import requests
 from datetime import timezone
@@ -133,7 +133,9 @@ class TokenAccounting(Utils):
 
                     current_content = [
                         MongoTypeTokenAddress(**x)
-                        for x in self.db[Collections.tokens_token_addresses].find(query)
+                        for x in self.db[Collections.tokens_token_addresses_v2].find(
+                            query
+                        )
                     ]
 
                     for dom in current_content:
@@ -294,12 +296,12 @@ class TokenAccounting(Utils):
                     )
                     end = dt.datetime.now()
                     console.log(
-                        f"update token accounting for 1000 events took {(end-start).total_seconds():,.3f}s"
+                        f"update token accounting for {len(result):,.0f} events took {(end-start).total_seconds():,.3f}s"
                     )
             except Exception as e:
                 console.log(e)
 
-            await asyncio.sleep(5)
+            await asyncio.sleep(1)
 
     def send_token_queues_to_mongo(self, limit: int = 0):
         self.queues: dict[Collections, list]
@@ -335,7 +337,7 @@ class TokenAccounting(Utils):
             try:
                 result = [
                     MongoTypeTokenAddress(**x)
-                    for x in self.db[Collections.tokens_token_addresses].find(
+                    for x in self.db[Collections.tokens_token_addresses_v2].find(
                         {"last_height_processed": -1}
                     )
                 ]
@@ -378,26 +380,53 @@ class TokenAccounting(Utils):
                         # Retrieve the token_addresses for all from the collection
                         token_addresses_as_class_from_collection = {
                             x["_id"]: MongoTypeTokenAddress(**x)
-                            for x in self.db[Collections.tokens_token_addresses].find(
+                            for x in self.db[
+                                Collections.tokens_token_addresses_v2
+                            ].find(
                                 {"_id": {"$in": list(events_by_token_address.keys())}}
                             )
                         }
+                        # Retrieve all current links for this set of token_addresses.
+                        token_links_from_collection_result = list(
+                            self.db[Collections.tokens_links_v2].find(
+                                {
+                                    "token_holding.token_address": {
+                                        "$in": list(events_by_token_address.keys())
+                                    }
+                                }
+                            )
+                        )
+                        token_links_from_collection_by_token_address = {}
+                        for link in token_links_from_collection_result:
+                            link_token_address = link["token_holding"]["token_address"]
+                            link_account_address = link["account_address"]
+                            if not token_links_from_collection_by_token_address.get(
+                                link_token_address
+                            ):
+                                token_links_from_collection_by_token_address[
+                                    link_token_address
+                                ]: dict = {}
 
-                        token_accounts_from_collection = {
-                            x["_id"]: MongoTypeTokenHolderAddress(**x)
-                            for x in self.db[Collections.tokens_accounts].find({})
-                        }
+                            # Double dict, so first lookup token address, then account address.
+                            token_links_from_collection_by_token_address[
+                                link_token_address
+                            ][link_account_address] = MongoTypeTokenLink(**link)
+
+                        # token_accounts_from_collection = {
+                        #     x["_id"]: MongoTypeTokenHolderAddress(**x)
+                        #     for x in self.db[Collections.tokens_accounts].find({})
+                        # }
                         # Looping through all token_addresses that have logged_events
                         # for log in events_for_token_address:
                         self.token_accounting_for_token_address(
                             token_address,
                             events_by_token_address,
                             token_addresses_as_class_from_collection,
-                            token_accounts_from_collection - 1,
+                            token_links_from_collection_by_token_address,
+                            -1,
                         )
 
-                    self.send_token_queues_to_mongo(249)
-                self.send_token_queues_to_mongo(0)
+                    self.send_token_queues_to_mongo(0)
 
             except Exception as e:
                 console.log(e)
@@ -416,7 +445,7 @@ class TokenAccounting(Utils):
             if result:
                 for token_address in result["token_addresses"]:
                     token_address_as_class = MongoTypeTokenAddress(
-                        **self.db[Collections.tokens_token_addresses].find_one(
+                        **self.db[Collections.tokens_token_addresses_v2].find_one(
                             {"_id": token_address}
                         )
                     )
@@ -425,7 +454,7 @@ class TokenAccounting(Utils):
                     token_address_as_class.last_height_processed = -1
 
                     # Write the token_address_as_class back to the collection.
-                    _ = self.db[Collections.tokens_token_addresses].bulk_write(
+                    _ = self.db[Collections.tokens_token_addresses_v2].bulk_write(
                         [self.mongo_save_for_token_address(token_address_as_class)]
                     )
 
@@ -644,11 +673,14 @@ class TokenAccounting(Utils):
             if "id" in repl_dict:
                 del repl_dict["id"]
 
-            queue_item = ReplaceOne(
-                {"_id": link_to_save.id},
-                replacement=repl_dict,
-                upsert=True,
-            )
+            if int(token_amount) == 0:
+                queue_item = DeleteOne({"_id": link_to_save.id})
+            else:
+                queue_item = ReplaceOne(
+                    {"_id": link_to_save.id},
+                    replacement=repl_dict,
+                    upsert=True,
+                )
 
             _queue.append(queue_item)
 

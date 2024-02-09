@@ -67,6 +67,8 @@ def main():
     loop.create_task(heartbeat.send_to_mongo())
 
     loop.create_task(heartbeat.update_token_accounting())
+    loop.create_task(heartbeat.pre_main_tokens_page())
+    loop.create_task(heartbeat.pre_addresses_by_contract_count())
 
     loop.create_task(heartbeat.get_special_purpose_blocks())
     loop.create_task(heartbeat.process_special_purpose_blocks())
@@ -82,8 +84,8 @@ def main():
 
     loop.create_task(heartbeat.update_memos_to_hashes())
 
-    loop.create_task(heartbeat.web23_domain_name_metadata())
-    loop.create_task(heartbeat.read_token_metadata_if_not_present())
+    # loop.create_task(heartbeat.web23_domain_name_metadata())
+    # loop.create_task(heartbeat.read_token_metadata_if_not_present())
 
     loop.run_forever()
 
