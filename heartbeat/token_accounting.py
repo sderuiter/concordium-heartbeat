@@ -99,7 +99,7 @@ class TokenAccounting(Utils):
                                         dom.metadata_url = token_metadata["metadata"][
                                             0
                                         ]["metadataURL"]
-                                        self.read_and_store_metadata(dom)
+                                        await self.read_and_store_metadata(dom)
                             except Exception as e:
                                 console.log(e)
                                 dom.metadata_url = None
@@ -142,7 +142,7 @@ class TokenAccounting(Utils):
                         if dom.token_metadata:
                             continue
 
-                        self.read_and_store_metadata(dom)
+                        await self.read_and_store_metadata(dom)
 
                 except Exception as e:
                     console.log(e)
@@ -510,6 +510,17 @@ class TokenAccounting(Utils):
                     token_address_as_class = MongoTypeTokenAddress(
                         **token_address_as_class
                     )
+                    # Need to turn this on to get rid of token holders in collection!
+                    # current_token_holders = (
+                    #     token_links_from_collection_by_token_address.get(token_address)
+                    # )
+                    # if current_token_holders:
+                    #     token_address_as_class.token_holders = {
+                    #         x["account_address"]: x["token_holding"]["token_amount"]
+                    #         for x in token_links_from_collection_by_token_address.get(
+                    #             token_address
+                    #         )
+                    #     }
 
             # token_holders_before_executing_logged_events = list(
             #     token_address_as_class.token_holders.keys()
@@ -779,7 +790,9 @@ class TokenAccounting(Utils):
         token_address_as_class.token_holders = token_holders
         return token_address_as_class
 
-    def read_and_store_metadata(self, token_address_as_class: MongoTypeTokenAddress):
+    async def read_and_store_metadata(
+        self, token_address_as_class: MongoTypeTokenAddress
+    ):
         timeout = 1  # sec
 
         url = token_address_as_class.metadata_url
@@ -798,29 +811,35 @@ class TokenAccounting(Utils):
                     do_request = False
                 else:
                     console.log(
-                        f"Trying{token_address_as_class.token_id} now: Current FA: {token_address_as_class.failed_attempt} "
+                        f"Trying{token_address_as_class.token_id} now... attempts: {token_address_as_class.failed_attempt.attempts:,.0f} "
                     )
             if do_request:
-                r = requests.get(url=url, verify=False, timeout=timeout)
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as resp:
+                        t = await resp.json()
 
-                metadata = None
-                if r.status_code == 200:
-                    try:
-                        metadata = TokenMetaData(**r.json())
-                        token_address_as_class.token_metadata = metadata
-                        token_address_as_class.failed_attempt = None
-                        dom_dict = token_address_as_class.model_dump(exclude_none=True)
-                        if "id" in dom_dict:
-                            del dom_dict["id"]
-                        self.db[Collections.tokens_token_addresses].replace_one(
-                            {"_id": token_address_as_class.id},
-                            replacement=dom_dict,
-                            upsert=True,
-                        )
-                    except Exception as e:
-                        error = str(e)
-                else:
-                    error = f"Request status code: {r.status_code}"
+                        # r = requests.get(url=url, verify=False, timeout=timeout)
+
+                        metadata = None
+                        if resp.status == 200:
+                            try:
+                                metadata = TokenMetaData(**t)
+                                token_address_as_class.token_metadata = metadata
+                                token_address_as_class.failed_attempt = None
+                                dom_dict = token_address_as_class.model_dump(
+                                    exclude_none=True
+                                )
+                                if "id" in dom_dict:
+                                    del dom_dict["id"]
+                                self.db[Collections.tokens_token_addresses].replace_one(
+                                    {"_id": token_address_as_class.id},
+                                    replacement=dom_dict,
+                                    upsert=True,
+                                )
+                            except Exception as e:
+                                error = str(e)
+                        else:
+                            error = "Failed..."
 
         except Exception as e:
             error = str(e)
@@ -861,7 +880,7 @@ class TokenAccounting(Utils):
         # this is very time consuming. Provenance tags with 1000 mints+metadata
         # per tx is killing this.
         # Metadata is hopefully picked up in the main process.
-        # self.read_and_store_metadata(token_address_as_class)
+        # await self.read_and_store_metadata(token_address_as_class)
         return token_address_as_class
 
     def save_transfer(
