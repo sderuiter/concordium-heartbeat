@@ -58,6 +58,7 @@ def main():
     # go really wrong...
 
     # heartbeat.create_mongodb_indices()
+    
     # heartbeat.create_block_per_day()
 
     loop = asyncio.get_event_loop()
