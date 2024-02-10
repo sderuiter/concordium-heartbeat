@@ -58,7 +58,7 @@ def main():
     # go really wrong...
 
     # heartbeat.create_mongodb_indices()
-    
+
     # heartbeat.create_block_per_day()
 
     loop = asyncio.get_event_loop()
@@ -85,8 +85,8 @@ def main():
 
     loop.create_task(heartbeat.update_memos_to_hashes())
 
-    # loop.create_task(heartbeat.web23_domain_name_metadata())
-    # loop.create_task(heartbeat.read_token_metadata_if_not_present())
+    loop.create_task(heartbeat.web23_domain_name_metadata())
+    loop.create_task(heartbeat.read_token_metadata_if_not_present())
 
     loop.run_forever()
 

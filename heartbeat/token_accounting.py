@@ -25,6 +25,7 @@ from pymongo.collection import Collection
 import requests
 from datetime import timezone
 from rich.console import Console
+from rich.progress import track
 import asyncio
 
 console = Console()
@@ -71,7 +72,9 @@ class TokenAccounting(Utils):
 
                     current_content = [
                         MongoTypeTokenAddress(**x)
-                        for x in self.db[Collections.tokens_token_addresses].find(query)
+                        for x in self.db[Collections.tokens_token_addresses_v2].find(
+                            query
+                        )
                     ]
                 else:
                     current_content = []
@@ -85,8 +88,13 @@ class TokenAccounting(Utils):
                     else:
                         url_to_fetch_metadata = f"https://wallet-proxy.mainnet.concordium.software/v0/CIS2TokenMetadata/{contract_index}/0?tokenId={dom.token_id}"
                     timeout = 1  # sec
-                    print(url_to_fetch_metadata)
+                    # print(url_to_fetch_metadata)
                     try:
+                        # async with aiohttp.ClientSession(
+                        #     read_timeout=timeout
+                        # ) as session:
+                        #     async with session.get(url_to_fetch_metadata) as resp:
+                        #         t = await resp.json()
                         r = requests.get(
                             url=url_to_fetch_metadata, verify=False, timeout=timeout
                         )
@@ -103,8 +111,8 @@ class TokenAccounting(Utils):
                             except Exception as e:
                                 console.log(e)
                                 dom.metadata_url = None
-                    except:
-                        pass
+                    except Exception as e:
+                        console.log(e)
 
             except Exception as e:
                 console.log(e)
@@ -119,7 +127,9 @@ class TokenAccounting(Utils):
         if self.net == "mainnet":
             while True:
                 try:
-                    token_tags = self.db[Collections.tokens_tags].find({})
+                    token_tags = self.db[Collections.tokens_tags].find(
+                        {"_id": {"$ne": "provenance-tags"}}
+                    )
 
                     recognized_contracts = [
                         MongoTypeTokensTag(**x).contracts for x in token_tags
@@ -138,10 +148,10 @@ class TokenAccounting(Utils):
                         )
                     ]
 
-                    for dom in current_content:
+                    for dom in track(current_content):
                         if dom.token_metadata:
                             continue
-
+                        # console.log(f"Trying {dom.id}...")
                         await self.read_and_store_metadata(dom)
 
                 except Exception as e:
@@ -405,7 +415,7 @@ class TokenAccounting(Utils):
                             ):
                                 token_links_from_collection_by_token_address[
                                     link_token_address
-                                ]: dict = {}
+                                ] = {}
 
                             # Double dict, so first lookup token address, then account address.
                             token_links_from_collection_by_token_address[
@@ -482,52 +492,43 @@ class TokenAccounting(Utils):
         # if we start at the beginning of the chain for token accounting
         # create an empty token address as class to start
         if token_accounting_last_processed_block == -1:
+            # create new empty token_address in memory
+            # we will overwrite the token address in the collection with this.
             token_address_as_class = self.create_new_token_address(token_address)
-            # token_holders_before_executing_logged_events = [
-            #     x["_id"] for x in self.db[Collections.tokens_accounts].find()
-            # ]
+
+            # remove any links to this address from the collection.
+            _ = self.db[Collections.tokens_links_v2].delete_many(
+                {"token_holding.token_address": token_address_as_class.id}
+            )
 
         else:
             # Retrieve the token_address document from the collection
-            # token_address_as_class = self.db[
-            #     Collections.tokens_token_addresses
-            # ].find_one({"_id": token_address})
             token_address_as_class = token_addresses_as_class_from_collection.get(
                 token_address
             )
 
             # If it's not there, create an new token_address
             if not token_address_as_class:
-                # start = dt.datetime.now()
                 token_address_as_class = self.create_new_token_address(token_address)
-                # end = dt.datetime.now()
-                # console.log(
-                #     f"create_new_token_address took {(end-start).total_seconds():,.3f}s"
-                # )
             else:
                 # make sure the token_address_as_call is actually typed correctly.
                 if type(token_address_as_class) is not MongoTypeTokenAddress:
                     token_address_as_class = MongoTypeTokenAddress(
                         **token_address_as_class
                     )
-                    # Need to turn this on to get rid of token holders in collection!
-                    # current_token_holders = (
-                    #     token_links_from_collection_by_token_address.get(token_address)
-                    # )
-                    # if current_token_holders:
-                    #     token_address_as_class.token_holders = {
-                    #         x["account_address"]: x["token_holding"]["token_amount"]
-                    #         for x in token_links_from_collection_by_token_address.get(
-                    #             token_address
-                    #         )
-                    #     }
-
-            # token_holders_before_executing_logged_events = list(
-            #     token_address_as_class.token_holders.keys()
-            # ).copy()
+                    # Need to read in the current token holders from the links collection
+                    current_token_holders = (
+                        token_links_from_collection_by_token_address.get(token_address)
+                    )
+                    if current_token_holders:
+                        token_address_as_class.token_holders = {
+                            x.account_address: x.token_holding.token_amount
+                            for x in token_links_from_collection_by_token_address.get(
+                                token_address
+                            ).values()
+                        }
 
         # This is the list of logged events for the selected token_address
-        # start = dt.datetime.now()
         logs_for_token_address = events_by_token_address[token_address]
         for log in logs_for_token_address:
             # Perform token accounting for this logged event
@@ -536,84 +537,34 @@ class TokenAccounting(Utils):
                 token_address_as_class,
                 log,
             )
-        # end = dt.datetime.now()
-        # console.log(
-        #     f"execute_logged_events ({len(logs_for_token_address)}) took {(end-start).total_seconds():,.3f}s"
-        # )
+
         # Set the last block_height that affected the token accounting
         # for this token_address to the last logged event block_height.
         token_address_as_class.last_height_processed = log.block_height
 
-        # Write the token_address_as_class back to the collection.
-        # start = dt.datetime.now()
-        self.queues[Queue.token_addresses].append(
-            self.mongo_save_for_token_address(token_address_as_class)
-        )
-        # end = dt.datetime.now()
-        # console.log(
-        #     f"mongo_save_for_token_address took {(end-start).total_seconds():,.3f}s"
-        # )
-        # _ = self.db[Collections.tokens_token_addresses].bulk_write(
-        #     [self.mongo_save_for_token_address(token_address_as_class)]
-        # )
-
-        # All logs for token_address are processed,
-        # now copy state from token holders to _accounts
-        # start = dt.datetime.now()
-        # queue = self.copy_token_holders_state_to_address_and_save(
-        #     token_address_as_class, token_links_from_collection
-        # )
         queue = self.copy_token_holders_to_links(
             token_address_as_class, token_links_from_collection_by_token_address
         )
         self.queues[Queue.token_links].extend(queue)
-        # end = dt.datetime.now()
-        # console.log(
-        #     f"copy_token_holders_state_to_address_and_save took {(end-start).total_seconds():,.3f}s"
-        # )
-        # already see if we need to send to mongo to keep memory down.
-        # self.send_token_queues_to_mongo(249)
 
-        # Perform a last check if there are accounts that no longer
-        # have this token. They need to have this token removed from
-        # their tokens_account document.
-        # queue_zero = self.update_accounts_for_zero_amounts(
-        #     token_holders_before_executing_logged_events, token_address_as_class
-        # )
-
-        # if len(queue_zero) > 0:
-        #     queue.extend(queue_zero)
-
-        # Only write to the collection if there are accounts that
-        # have been modified.
-
-        ##### this bulk write is now located in the main loop
-
-        # if len(queue) > 0:
-        #     try:
-        #         _ = self.db[Collections.tokens_accounts].bulk_write(queue)
-        #         console.log(f"Updated token accounting for {len(queue)} accounts.")
-        #     except:
-        #         console.log(token_address_as_class)
-        # else:
-        #     pass
+        # Write the token_address_as_class back to the collection.
+        # now token holders information is stored in links
+        self.queues[Queue.token_addresses].append(
+            self.mongo_save_for_token_address(token_address_as_class)
+        )
+        #
 
     def mongo_save_for_token_address(
         self, token_address_as_class: MongoTypeTokenAddress
     ):
-        repl_dict = token_address_as_class.model_dump()
+        repl_dict = token_address_as_class.model_dump(exclude_none=True)
         if "id" in repl_dict:
             del repl_dict["id"]
 
-        # sorted_holders = list(repl_dict["token_holders"].keys())
-        # sorted_holders.sort()
-        # token_holders_sorted = {
-        #     i: repl_dict["token_holders"][i] for i in sorted_holders
-        # }
-        # token_holders_sorted = {
-        #     k: v for k, v in token_holders_sorted.items() if int(v) > 0
-        # }
-        # repl_dict["token_holders"] = token_holders_sorted
+        # remove token holders again, as that's only an intermediate result.
+        # actual holding are stored in the link collection.
+        if "token_holders" in repl_dict:
+            del repl_dict["token_holders"]
 
         queue_item = ReplaceOne(
             {"_id": token_address_as_class.id},
@@ -622,25 +573,25 @@ class TokenAccounting(Utils):
         )
         return queue_item
 
-    def mongo_save_for_address(self, address_to_save: MongoTypeTokenHolderAddress):
-        repl_dict = address_to_save.model_dump()
-        if "id" in repl_dict:
-            del repl_dict["id"]
+    # def mongo_save_for_address(self, address_to_save: MongoTypeTokenHolderAddress):
+    #     repl_dict = address_to_save.model_dump()
+    #     if "id" in repl_dict:
+    #         del repl_dict["id"]
 
-        sorted_tokens = list(repl_dict["tokens"].keys())
-        sorted_tokens.sort()
-        tokens_sorted = {i: repl_dict["tokens"][i] for i in sorted_tokens}
-        tokens_sorted = {
-            k: v for k, v in tokens_sorted.items() if int(v["token_amount"]) > 0
-        }
-        repl_dict["tokens"] = tokens_sorted
+    #     sorted_tokens = list(repl_dict["tokens"].keys())
+    #     sorted_tokens.sort()
+    #     tokens_sorted = {i: repl_dict["tokens"][i] for i in sorted_tokens}
+    #     tokens_sorted = {
+    #         k: v for k, v in tokens_sorted.items() if int(v["token_amount"]) > 0
+    #     }
+    #     repl_dict["tokens"] = tokens_sorted
 
-        queue_item = ReplaceOne(
-            {"_id": address_to_save.id},
-            replacement=repl_dict,
-            upsert=True,
-        )
-        return queue_item
+    #     queue_item = ReplaceOne(
+    #         {"_id": address_to_save.id},
+    #         replacement=repl_dict,
+    #         upsert=True,
+    #     )
+    #     return queue_item
 
     def copy_token_holders_to_links(
         self,
@@ -736,42 +687,42 @@ class TokenAccounting(Utils):
 
     #     return _queue
 
-    def update_accounts_for_zero_amounts(
-        self,
-        token_holders_before_executing_logged_events: list[CCD_Address],
-        token_address_as_class: MongoTypeTokenAddress,
-    ):
-        _queue = []
+    # def update_accounts_for_zero_amounts(
+    #     self,
+    #     token_holders_before_executing_logged_events: list[CCD_Address],
+    #     token_address_as_class: MongoTypeTokenAddress,
+    # ):
+    #     _queue = []
 
-        # token_holders according to the token_address (this
-        # was just updated, so correct.) We need to compare this with
-        # token_holders_before_executing_logged_events.
+    #     # token_holders according to the token_address (this
+    #     # was just updated, so correct.) We need to compare this with
+    #     # token_holders_before_executing_logged_events.
 
-        token_holders_from_address = token_address_as_class.token_holders.keys()
+    #     token_holders_from_address = token_address_as_class.token_holders.keys()
 
-        token_holders_zero_amounts = list(
-            set(token_holders_before_executing_logged_events)
-            - set(token_holders_from_address)
-        )
+    #     token_holders_zero_amounts = list(
+    #         set(token_holders_before_executing_logged_events)
+    #         - set(token_holders_from_address)
+    #     )
 
-        for address in token_holders_zero_amounts:
-            address_to_save = self.db[Collections.tokens_accounts].find_one(
-                {"_id": address}
-            )
-            if not address_to_save:
-                # this should not be possible...
-                pass
-            else:
-                address_to_save = MongoTypeTokenHolderAddress(**address_to_save)
-                # delete this token from the tokens_list
-                try:
-                    del address_to_save.tokens[token_address_as_class.id]
-                except KeyError:
-                    pass
+    #     for address in token_holders_zero_amounts:
+    #         address_to_save = self.db[Collections.tokens_accounts].find_one(
+    #             {"_id": address}
+    #         )
+    #         if not address_to_save:
+    #             # this should not be possible...
+    #             pass
+    #         else:
+    #             address_to_save = MongoTypeTokenHolderAddress(**address_to_save)
+    #             # delete this token from the tokens_list
+    #             try:
+    #                 del address_to_save.tokens[token_address_as_class.id]
+    #             except KeyError:
+    #                 pass
 
-                _queue.append(self.mongo_save_for_address(address_to_save))
+    #             _queue.append(self.mongo_save_for_address(address_to_save))
 
-        return _queue
+    #     return _queue
 
     def save_mint(
         self, token_address_as_class: MongoTypeTokenAddress, log: MongoTypeLoggedEvent
@@ -801,7 +752,7 @@ class TokenAccounting(Utils):
         try:
             do_request = url is not None
             if token_address_as_class.failed_attempt:
-                timeout = 2
+                timeout = 5
 
                 if dt.datetime.now(
                     tz=timezone.utc
@@ -809,12 +760,12 @@ class TokenAccounting(Utils):
                     timezone.utc
                 ):
                     do_request = False
-                else:
-                    console.log(
-                        f"Trying{token_address_as_class.token_id} now... attempts: {token_address_as_class.failed_attempt.attempts:,.0f} "
-                    )
+                # else:
+                #     console.log(
+                #         f"Trying{token_address_as_class.token_id} now... attempts: {token_address_as_class.failed_attempt.attempts:,.0f} "
+                #     )
             if do_request:
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(read_timeout=timeout) as session:
                     async with session.get(url) as resp:
                         t = await resp.json()
 
@@ -831,7 +782,9 @@ class TokenAccounting(Utils):
                                 )
                                 if "id" in dom_dict:
                                     del dom_dict["id"]
-                                self.db[Collections.tokens_token_addresses].replace_one(
+                                self.db[
+                                    Collections.tokens_token_addresses_v2
+                                ].replace_one(
                                     {"_id": token_address_as_class.id},
                                     replacement=dom_dict,
                                     upsert=True,
@@ -866,7 +819,7 @@ class TokenAccounting(Utils):
             dom_dict = token_address_as_class.model_dump(exclude_none=True)
             if "id" in dom_dict:
                 del dom_dict["id"]
-            self.db[Collections.tokens_token_addresses].replace_one(
+            self.db[Collections.tokens_token_addresses_v2].replace_one(
                 {"_id": token_address_as_class.id},
                 replacement=dom_dict,
                 upsert=True,
@@ -952,6 +905,7 @@ class TokenAccounting(Utils):
                 "contract": instance_address,
                 "token_id": token_id,
                 "token_amount": str(int(0)),  # mongo limitation on int size
+                # not that we need to include the token_holders here, because we use it in code (but do not store it!)
                 "token_holders": {},  # {CCD_AccountAddress, str(token_amount)}
                 "last_height_processed": -1,
                 "hidden": False,
