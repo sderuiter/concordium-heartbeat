@@ -144,6 +144,8 @@ class BlockLoop(_block_processing):
         It batches blocks up to MAX_BLOCKS_PER_RUN and stores blocks to be
         processed in the queue `finalized_block_infos_to_process`.
         """
+        if DEBUG:
+            console.log("get_finalized_blocks")
         while True:
             request_counter = 0
             result = self.db[Collections.helpers].find_one(

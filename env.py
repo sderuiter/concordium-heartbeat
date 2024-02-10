@@ -58,11 +58,12 @@ REQUESTOR_NODES = REQUESTOR_NODES.split(",")
 COIN_API_KEY = os.environ.get("COIN_API_KEY", COIN_API_KEY_LOCAL)
 TESTNET_IP = os.environ.get("TESTNET_IP", TESTNET_IP_LOCAL)
 MAINNET_IP = os.environ.get("MAINNET_IP", MAINNET_IP_LOCAL)
+DEBUG = os.environ.get("DEBUG", False)
 
 TESTNET_PORT = os.environ.get("TESTNET_PORT", TESTNET_PORT_LOCAL)
 MAINNET_PORT = os.environ.get("MAINNET_PORT", MAINNET_PORT_LOCAL)
 
-MAX_BLOCKS_PER_RUN = int(os.environ.get("MAX_BLOCKS_PER_RUN", 1000))
+MAX_BLOCKS_PER_RUN = int(os.environ.get("MAX_BLOCKS_PER_RUN", 100))
 
 RUN_ON_NET = os.environ.get("NET", NET_LOCAL)
 # TESTNET = False if NET == "MAINNET" else True
