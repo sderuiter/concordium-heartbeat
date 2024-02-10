@@ -150,7 +150,8 @@ class BlockLoop(_block_processing):
                 {"_id": "heartbeat_last_processed_block"}
             )
             heartbeat_last_processed_block_height = result["height"]
-            # console.log(f"{heartbeat_last_processed_block_height=}")
+            if DEBUG:
+                console.log(f"{heartbeat_last_processed_block_height=}")
             last_requested_block_not_finalized = False
             block_to_request_in_queue = False
 
@@ -169,7 +170,8 @@ class BlockLoop(_block_processing):
                 block_to_request_in_queue = heartbeat_last_processed_block_height in [
                     x.height for x in self.finalized_block_infos_to_process
                 ]
-                # console.log(f"{self.finalized_block_infos_to_process=}")
+                if DEBUG:
+                    console.log(f"{self.finalized_block_infos_to_process=}")
                 # we haven't previously requested this block
                 if not block_to_request_in_queue:
                     try:
@@ -187,7 +189,8 @@ class BlockLoop(_block_processing):
                         )
                     else:
                         last_requested_block_not_finalized = True
-            # console.log(f"{len(self.finalized_block_infos_to_process)=}")
+            if DEBUG:
+                console.log(f"{len(self.finalized_block_infos_to_process)=}")
             if len(self.finalized_block_infos_to_process) > 0:
                 if len(self.finalized_block_infos_to_process) == 1:
                     console.log(
