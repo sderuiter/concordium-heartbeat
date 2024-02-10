@@ -148,7 +148,7 @@ class TokenAccounting(Utils):
                         )
                     ]
 
-                    for dom in track(current_content):
+                    for dom in current_content:
                         if dom.token_metadata:
                             continue
                         # console.log(f"Trying {dom.id}...")
