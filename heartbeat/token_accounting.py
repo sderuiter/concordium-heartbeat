@@ -68,14 +68,30 @@ class TokenAccounting(Utils):
                     contracts_in_ccd_token_tag = MongoTypeTokensTag(
                         **ccd_token_tags
                     ).contracts
-                    query = {"contract": {"$in": contracts_in_ccd_token_tag}}
+                    # query = {"contract": {"$in": contracts_in_ccd_token_tag}}
 
-                    current_content = [
-                        MongoTypeTokenAddress(**x)
-                        for x in self.db[Collections.tokens_token_addresses_v2].find(
-                            query
-                        )
+                    pipeline = [
+                        {"$match": {"token_metadata": {"$exists": False}}},
+                        {"$match": {"contract": {"$in": contracts_in_ccd_token_tag}}},
                     ]
+
+                    current_result = (
+                        await self.motordb[Collections.tokens_token_addresses_v2]
+                        .aggregate(pipeline)
+                        .to_list(100_000)
+                    )
+                    if len(current_result) > 0:
+                        current_content = [
+                            MongoTypeTokenAddress(**x) for x in current_result
+                        ]
+                    else:
+                        current_content = []
+                    # current_content = [
+                    #     MongoTypeTokenAddress(**x)
+                    #     for x in self.db[Collections.tokens_token_addresses_v2].find(
+                    #         query
+                    #     )
+                    # ]
                 else:
                     current_content = []
 
@@ -117,7 +133,7 @@ class TokenAccounting(Utils):
             except Exception as e:
                 console.log(e)
 
-            await asyncio.sleep(59)
+            await asyncio.sleep(10 * 60)
 
     async def read_token_metadata_if_not_present(self):
         """
@@ -128,36 +144,56 @@ class TokenAccounting(Utils):
             while True:
                 try:
                     token_tags = self.db[Collections.tokens_tags].find(
-                        {"_id": {"$ne": "provenance-tags"}}
+                        {}
+                        # {"_id": {"$ne": "provenance-tags"}}
                     )
 
                     recognized_contracts = [
                         MongoTypeTokensTag(**x).contracts for x in token_tags
                     ]
 
-                    query = {
-                        "contract": {
-                            "$in": list(chain.from_iterable(recognized_contracts))
-                        }
-                    }
+                    # query = {
+                    #     "contract": {
+                    #         "$in": list(chain.from_iterable(recognized_contracts))
+                    #     }
+                    # }
 
-                    current_content = [
-                        MongoTypeTokenAddress(**x)
-                        for x in self.db[Collections.tokens_token_addresses_v2].find(
-                            query
-                        )
+                    pipeline = [
+                        {"$match": {"token_metadata": {"$exists": False}}},
+                        {
+                            "$match": {
+                                "contract": {
+                                    "$in": list(
+                                        chain.from_iterable(recognized_contracts)
+                                    )
+                                }
+                            }
+                        },
                     ]
+
+                    current_result = (
+                        await self.motordb[Collections.tokens_token_addresses_v2]
+                        .aggregate(pipeline)
+                        .to_list(1000)
+                    )
+
+                    if len(current_result) > 0:
+                        current_content = [
+                            MongoTypeTokenAddress(**x) for x in current_result
+                        ]
+                    else:
+                        current_content = []
 
                     for dom in current_content:
                         if dom.token_metadata:
                             continue
-                        console.log(f"Trying {dom.id}...")
+                        # console.log(f"Trying {dom.id}...")
                         await self.read_and_store_metadata(dom)
 
                 except Exception as e:
                     console.log(e)
 
-        await asyncio.sleep(500)
+                await asyncio.sleep(5 * 60)
 
     async def update_token_accounting(self):
         """
@@ -577,26 +613,6 @@ class TokenAccounting(Utils):
         )
         return queue_item
 
-    # def mongo_save_for_address(self, address_to_save: MongoTypeTokenHolderAddress):
-    #     repl_dict = address_to_save.model_dump()
-    #     if "id" in repl_dict:
-    #         del repl_dict["id"]
-
-    #     sorted_tokens = list(repl_dict["tokens"].keys())
-    #     sorted_tokens.sort()
-    #     tokens_sorted = {i: repl_dict["tokens"][i] for i in sorted_tokens}
-    #     tokens_sorted = {
-    #         k: v for k, v in tokens_sorted.items() if int(v["token_amount"]) > 0
-    #     }
-    #     repl_dict["tokens"] = tokens_sorted
-
-    #     queue_item = ReplaceOne(
-    #         {"_id": address_to_save.id},
-    #         replacement=repl_dict,
-    #         upsert=True,
-    #     )
-    #     return queue_item
-
     def copy_token_holders_to_links(
         self,
         token_address_as_class: MongoTypeTokenAddress,
@@ -652,82 +668,6 @@ class TokenAccounting(Utils):
 
         return _queue
 
-    # def copy_token_holders_state_to_address_and_save(
-    #     self,
-    #     token_address_as_class: MongoTypeTokenAddress,
-    #     token_accounts_from_collection: dict,
-    # ):
-    #     _queue = []
-    #     for address, token_amount in token_address_as_class.token_holders.items():
-    #         # address_to_save = self.db[Collections.tokens_accounts].find_one(
-    #         #     {"_id": address}
-    #         # )
-    #         address_to_save = token_accounts_from_collection.get(address)
-    #         # if this account does not exist yet, create empty dict.
-    #         if not address_to_save:
-    #             address_to_save = MongoTypeTokenHolderAddress(
-    #                 **{
-    #                     "_id": address,
-    #                     "account_address_canonical": address[:29],
-    #                     "tokens": {},
-    #                 }
-    #             )
-    #         else:
-    #             if type(address_to_save) is not MongoTypeTokenHolderAddress:
-    #                 address_to_save = MongoTypeTokenHolderAddress(**address_to_save)
-
-    #         token_to_save = MongoTypeTokenForAddress(
-    #             **{
-    #                 "token_address": token_address_as_class.id,
-    #                 "contract": token_address_as_class.contract,
-    #                 "token_id": token_address_as_class.token_id,
-    #                 "token_amount": str(token_amount),
-    #             }
-    #         )
-
-    #         address_to_save.tokens[token_address_as_class.id] = token_to_save
-
-    #         _queue.append(self.mongo_save_for_address(address_to_save))
-
-    #     return _queue
-
-    # def update_accounts_for_zero_amounts(
-    #     self,
-    #     token_holders_before_executing_logged_events: list[CCD_Address],
-    #     token_address_as_class: MongoTypeTokenAddress,
-    # ):
-    #     _queue = []
-
-    #     # token_holders according to the token_address (this
-    #     # was just updated, so correct.) We need to compare this with
-    #     # token_holders_before_executing_logged_events.
-
-    #     token_holders_from_address = token_address_as_class.token_holders.keys()
-
-    #     token_holders_zero_amounts = list(
-    #         set(token_holders_before_executing_logged_events)
-    #         - set(token_holders_from_address)
-    #     )
-
-    #     for address in token_holders_zero_amounts:
-    #         address_to_save = self.db[Collections.tokens_accounts].find_one(
-    #             {"_id": address}
-    #         )
-    #         if not address_to_save:
-    #             # this should not be possible...
-    #             pass
-    #         else:
-    #             address_to_save = MongoTypeTokenHolderAddress(**address_to_save)
-    #             # delete this token from the tokens_list
-    #             try:
-    #                 del address_to_save.tokens[token_address_as_class.id]
-    #             except KeyError:
-    #                 pass
-
-    #             _queue.append(self.mongo_save_for_address(address_to_save))
-
-    #     return _queue
-
     def save_mint(
         self, token_address_as_class: MongoTypeTokenAddress, log: MongoTypeLoggedEvent
     ):
@@ -758,7 +698,7 @@ class TokenAccounting(Utils):
             if token_address_as_class.failed_attempt:
                 timeout = 5
 
-                if dt.datetime.now(
+                if dt.datetime.now().astimezone(
                     tz=timezone.utc
                 ) < token_address_as_class.failed_attempt.do_not_try_before.astimezone(
                     timezone.utc
@@ -796,7 +736,7 @@ class TokenAccounting(Utils):
                             except Exception as e:
                                 error = str(e)
                         else:
-                            error = "Failed..."
+                            error = f"Failed with status code: {resp.status}"
 
         except Exception as e:
             error = str(e)
@@ -807,16 +747,20 @@ class TokenAccounting(Utils):
                 failed_attempt = FailedAttempt(
                     **{
                         "attempts": 1,
-                        "do_not_try_before": dt.datetime.now(tz=timezone.utc)
+                        "do_not_try_before": dt.datetime.now().astimezone(
+                            tz=timezone.utc
+                        )
                         + dt.timedelta(hours=2),
                         "last_error": error,
                     }
                 )
             else:
                 failed_attempt.attempts += 1
-                failed_attempt.do_not_try_before = dt.datetime.now(
+                failed_attempt.do_not_try_before = dt.datetime.now().astimezone(
                     tz=timezone.utc
-                ) + dt.timedelta(hours=failed_attempt.attempts)
+                ) + dt.timedelta(
+                    hours=failed_attempt.attempts * failed_attempt.attempts
+                )
                 failed_attempt.last_error = error
 
             token_address_as_class.failed_attempt = failed_attempt
