@@ -151,7 +151,7 @@ class TokenAccounting(Utils):
                     for dom in current_content:
                         if dom.token_metadata:
                             continue
-                        # console.log(f"Trying {dom.id}...")
+                        console.log(f"Trying {dom.id}...")
                         await self.read_and_store_metadata(dom)
 
                 except Exception as e:
@@ -454,11 +454,15 @@ class TokenAccounting(Utils):
             )
             if result:
                 for token_address in result["token_addresses"]:
-                    token_address_as_class = MongoTypeTokenAddress(
-                        **self.db[Collections.tokens_token_addresses_v2].find_one(
-                            {"_id": token_address}
+                    request_result = self.db[
+                        Collections.tokens_token_addresses_v2
+                    ].find_one({"_id": token_address})
+                    if request_result:
+                        token_address_as_class = MongoTypeTokenAddress(**request_result)
+                    else:
+                        token_address_as_class = self.create_new_token_address(
+                            token_address
                         )
-                    )
                     # update the last_height_processed to -1, this will trigger
                     # a redo of the token accounting.
                     token_address_as_class.last_height_processed = -1
@@ -516,17 +520,17 @@ class TokenAccounting(Utils):
                     token_address_as_class = MongoTypeTokenAddress(
                         **token_address_as_class
                     )
-                    # Need to read in the current token holders from the links collection
-                    current_token_holders = (
-                        token_links_from_collection_by_token_address.get(token_address)
-                    )
-                    if current_token_holders:
-                        token_address_as_class.token_holders = {
-                            x.account_address: x.token_holding.token_amount
-                            for x in token_links_from_collection_by_token_address.get(
-                                token_address
-                            ).values()
-                        }
+                # Need to read in the current token holders from the links collection
+                current_token_holders = (
+                    token_links_from_collection_by_token_address.get(token_address)
+                )
+                if current_token_holders:
+                    token_address_as_class.token_holders = {
+                        x.account_address: x.token_holding.token_amount
+                        for x in token_links_from_collection_by_token_address.get(
+                            token_address
+                        ).values()
+                    }
 
         # This is the list of logged events for the selected token_address
         logs_for_token_address = events_by_token_address[token_address]
