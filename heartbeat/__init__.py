@@ -21,6 +21,7 @@ from .start_over import StartOver as _start_over
 from .send_to_mongo import SendToMongo as _send_to_mongo
 from .block_loop import BlockLoop as _block_loop
 from .pre_renderers import PreRenderers as _pre_renderers
+from .consistency import Consistency as _consistency
 from .utils import Queue
 
 urllib3.disable_warnings()
@@ -36,6 +37,7 @@ class Heartbeat(
     _start_over,
     _send_to_mongo,
     _pre_renderers,
+    _consistency,
 ):
     def __init__(
         self,
