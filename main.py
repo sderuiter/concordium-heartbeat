@@ -88,7 +88,7 @@ def main():
 
     loop.create_task(heartbeat.web23_domain_name_metadata())
     loop.create_task(heartbeat.read_token_metadata_if_not_present())
-    loop.create_task(heartbeat.check_blocks())
+    # loop.create_task(heartbeat.check_blocks())
     # not operational yet
     # loop.create_task(heartbeat.check_transactions())
 
