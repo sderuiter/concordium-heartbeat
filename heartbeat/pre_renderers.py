@@ -43,10 +43,13 @@ class PreRenderers(Utils):
                 _ = self.db[Collections.pre_tokens_overview].bulk_write(queue)
 
             except Exception as e:
-                # pass
-                console.log(e)
-                exit(1)
-
+                self.tooter.relay(
+                    channel=TooterChannel.NOTIFIER,
+                    title="",
+                    chat_id=913126895,
+                    body=f"Heartbeat on {self.net} prerender pre_main_tokens_page: {e}",
+                    notifier_type=TooterType.MONGODB_ERROR,
+                )
             await asyncio.sleep(60)
 
     async def pre_main_tokens_by_address_canonical(self):
@@ -69,7 +72,7 @@ class PreRenderers(Utils):
                     .to_list(1_000_000_000)
                 )
                 tokens_by_address = {x["_id"]: x["count"] for x in result}
-
+                # console.log("pre_main_tokens_by_address_canonical")
                 queue = []
                 for account_address_canonical, count in tokens_by_address.items():
                     repl_dict = {"_id": account_address_canonical, "count": count}
@@ -84,9 +87,13 @@ class PreRenderers(Utils):
                 _ = self.db[Collections.pre_tokens_by_address].bulk_write(queue)
 
             except Exception as e:
-                # pass
-                console.log(e)
-                exit(1)
+                self.tooter.relay(
+                    channel=TooterChannel.NOTIFIER,
+                    title="",
+                    chat_id=913126895,
+                    body=f"Heartbeat on {self.net} prerender pre_main_tokens_by_address_canonical: {e}",
+                    notifier_type=TooterType.MONGODB_ERROR,
+                )
 
             await asyncio.sleep(60)
 
@@ -122,8 +129,12 @@ class PreRenderers(Utils):
                 )
 
             except Exception as e:
-                # pass
-                console.log(e)
-                exit(1)
+                self.tooter.relay(
+                    channel=TooterChannel.NOTIFIER,
+                    title="",
+                    chat_id=913126895,
+                    body=f"Heartbeat on {self.net} prerender pre_addresses_by_contract_count: {e}",
+                    notifier_type=TooterType.MONGODB_ERROR,
+                )
 
             await asyncio.sleep(60)
