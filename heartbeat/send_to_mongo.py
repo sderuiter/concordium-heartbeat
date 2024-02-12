@@ -186,6 +186,12 @@ class SendToMongo(Utils):
             except Exception as e:
                 # pass
                 console.log(e)
-                exit(1)
+                self.tooter.relay(
+                    channel=TooterChannel.NOTIFIER,
+                    title="",
+                    chat_id=913126895,
+                    body=f"Heartbeat on {self.net} send_to_mongo: {e}",
+                    notifier_type=TooterType.MONGODB_ERROR,
+                )
 
             await asyncio.sleep(1)
