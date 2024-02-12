@@ -49,6 +49,47 @@ class PreRenderers(Utils):
 
             await asyncio.sleep(60)
 
+    async def pre_main_tokens_by_address_canonical(self):
+        self.db: dict[Collections, Collection]
+        while True:
+            try:
+                result = (
+                    await self.motordb[Collections.tokens_links_v2]
+                    .aggregate(
+                        [
+                            {
+                                "$group": {
+                                    "_id": "$account_address_canonical",
+                                    "count": {"$sum": 1},
+                                }
+                            },
+                            {"$sort": {"count": -1}},
+                        ]
+                    )
+                    .to_list(1_000_000_000)
+                )
+                tokens_by_address = {x["_id"]: x["count"] for x in result}
+
+                queue = []
+                for account_address_canonical, count in tokens_by_address.items():
+                    repl_dict = {"_id": account_address_canonical, "count": count}
+                    if "id" in repl_dict:
+                        del repl_dict["id"]
+                    queue_item = ReplaceOne(
+                        {"_id": account_address_canonical},
+                        replacement=repl_dict,
+                        upsert=True,
+                    )
+                    queue.append(queue_item)
+                _ = self.db[Collections.pre_tokens_by_address].bulk_write(queue)
+
+            except Exception as e:
+                # pass
+                console.log(e)
+                exit(1)
+
+            await asyncio.sleep(60)
+
     async def pre_addresses_by_contract_count(self):
         self.db: dict[Collections, Collection]
         while True:

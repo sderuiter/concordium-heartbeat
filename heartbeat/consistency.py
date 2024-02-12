@@ -45,13 +45,13 @@ class Consistency(Utils):
                     channel=TooterChannel.NOTIFIER,
                     title="",
                     chat_id=913126895,
-                    body=f"Heartbeat on {self.net} missed {len(missing_heights):,.0f} blocks. Added as special request.",
+                    body=f"Heartbeat on {self.net} missed {len(missing_heights):,.0f} blocks. {'Added as special request.' if len(missing_heights) > 0 else ''}",
                     notifier_type=TooterType.INFO,
                 )
             except Exception as e:
                 console.log(e)
 
-            await asyncio.sleep(60 * 60)
+            await asyncio.sleep(6 * 60 * 60)
 
     async def check_transactions(self):
         self.db: dict[Collections, Collection]
