@@ -567,6 +567,8 @@ class TokenAccounting(Utils):
                             token_address
                         ).values()
                     }
+                else:
+                    token_address_as_class.token_holders = {}
 
         # This is the list of logged events for the selected token_address
         logs_for_token_address = events_by_token_address[token_address]
