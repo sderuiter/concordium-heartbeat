@@ -8,6 +8,7 @@ from pymongo import ReplaceOne
 from env import *
 import asyncio
 from rich.console import Console
+import random
 
 console = Console()
 
@@ -16,42 +17,73 @@ class Consistency(Utils):
     async def check_blocks(self):
         self.db: dict[Collections, Collection]
         self.motordb: dict[Collections, Collection]
+        sample_size = 1_000
         while True:
             try:
-                result = (
-                    await self.motordb[Collections.blocks]
-                    .find({}, {"_id": 0, "height": 1})
-                    .to_list(1_000_000_000)
+                result = self.db[Collections.helpers].find_one(
+                    {"_id": "heartbeat_last_processed_block"}
+                )
+                heartbeat_last_processed_block = result["height"]
+                random_block_list = random.sample(
+                    range(1, heartbeat_last_processed_block), sample_size
                 )
 
-                all_heights_in_db = [x["height"] for x in result]
-                all_heights = set(range(0, max(all_heights_in_db)))
-                missing_heights = list(set(all_heights) - set(all_heights_in_db))
-                print(f"{len(missing_heights):,.0f} missing blocks on {self.net}.")
-                # print(missing_heights)
+                count_documents_in_collection = await self.motordb[
+                    Collections.blocks
+                ].count_documents({"height": {"$in": random_block_list}})
 
-                d = {"_id": "special_purpose_block_request", "heights": missing_heights}
-                _ = self.db[Collections.helpers].bulk_write(
-                    [
-                        ReplaceOne(
-                            {"_id": "special_purpose_block_request"},
-                            replacement=d,
-                            upsert=True,
+                # print()
+                if count_documents_in_collection == sample_size:
+                    pass
+                else:
+
+                    documents = (
+                        await self.motordb[Collections.blocks]
+                        .aggregate(
+                            [
+                                {"$match": {"height": {"$in": random_block_list}}},
+                                {
+                                    "$project": {
+                                        "_id": 0,
+                                        "height": 1,
+                                    }
+                                },
+                            ]
                         )
-                    ]
-                )
+                        .to_list(1_000_000_000)
+                    )
+                    found_documents = [x["height"] for x in documents]
+                    missing_blocks = []
+                    for random_block in random_block_list:
+                        if random_block not in found_documents:
+                            missing_blocks.append(random_block)
+                    print(f"{len(missing_blocks):,.0f} missing blocks on {self.net}.")
 
-                self.tooter.relay(
-                    channel=TooterChannel.NOTIFIER,
-                    title="",
-                    chat_id=913126895,
-                    body=f"Heartbeat on {self.net} missed {len(missing_heights):,.0f} blocks. {'Added as special request.' if len(missing_heights) > 0 else ''}",
-                    notifier_type=TooterType.INFO,
-                )
+                    d = {
+                        "_id": "special_purpose_block_request",
+                        "heights": missing_blocks,
+                    }
+                    _ = self.db[Collections.helpers].bulk_write(
+                        [
+                            ReplaceOne(
+                                {"_id": "special_purpose_block_request"},
+                                replacement=d,
+                                upsert=True,
+                            )
+                        ]
+                    )
+
+                    self.tooter.relay(
+                        channel=TooterChannel.NOTIFIER,
+                        title="",
+                        chat_id=913126895,
+                        body=f"Heartbeat on {self.net} missed {len(missing_blocks):,.0f} blocks. {'Added as special request.' if len(missing_blocks) > 0 else ''}",
+                        notifier_type=TooterType.INFO,
+                    )
             except Exception as e:
                 console.log(e)
 
-            await asyncio.sleep(6 * 60 * 60)
+            await asyncio.sleep(60)
 
     async def check_transactions(self):
         self.db: dict[Collections, Collection]
