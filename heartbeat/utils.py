@@ -94,6 +94,7 @@ class Utils:
             },
             upsert=True,
         )
+        self.internal_freqency_timer = dt.datetime.now().astimezone(tz=dt.timezone.utc)
 
     def log_last_heartbeat_memo_to_hashes_in_mongo(self, height: int):
         query = {"_id": "heartbeat_memos_last_processed_block"}

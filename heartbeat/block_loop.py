@@ -1,6 +1,7 @@
 # ruff: noqa: F403, F405, E402, E501, E722
 from .utils import Queue
 from .block_processing import BlockProcessing as _block_processing
+from sharingiscaring.tooter import TooterChannel, TooterType
 from sharingiscaring.mongodb import Collections
 from sharingiscaring.GRPCClient.CCD_Types import *
 from pymongo import ReplaceOne
@@ -147,6 +148,19 @@ class BlockLoop(_block_processing):
         if DEBUG:
             console.log("get_finalized_blocks")
         while True:
+            # this comparison makes sure that if we haven't logged a new block in 5 min
+            # something somewhere has gone wrong. Hoping that a restart will fix things...
+            current_time = dt.datetime.now().astimezone(tz=dt.timezone.utc)
+            if (current_time - self.internal_freqency_timer).total_seconds() > 5 * 60:
+                self.tooter.relay(
+                    channel=TooterChannel.NOTIFIER,
+                    title="",
+                    chat_id=913126895,
+                    body=f"Heartbeat on {self.net} seems to not have processed a new block in 5 min? Exiting to restart.",
+                    notifier_type=TooterType.REQUESTS_ERROR,
+                )
+                exit()
+
             request_counter = 0
             result = self.db[Collections.helpers].find_one(
                 {"_id": "heartbeat_last_processed_block"}
@@ -202,4 +216,16 @@ class BlockLoop(_block_processing):
                     console.log(
                         f"Blocks retrieved: {self.finalized_block_infos_to_process[0].height:,.0f} - {self.finalized_block_infos_to_process[-1].height:,.0f}"
                     )
+                    if (
+                        self.finalized_block_infos_to_process[0].height
+                        > self.finalized_block_infos_to_process[-1].height
+                    ):
+                        self.tooter.relay(
+                            channel=TooterChannel.NOTIFIER,
+                            title="",
+                            chat_id=913126895,
+                            body=f"Heartbeat on {self.net} seems to be in a loop? Exiting to restart.",
+                            notifier_type=TooterType.REQUESTS_ERROR,
+                        )
+                        exit()
             await asyncio.sleep(1)

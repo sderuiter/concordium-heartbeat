@@ -66,3 +66,9 @@ class Heartbeat(
         self.queues: dict[Collections, list] = {}
         for q in Queue:
             self.queues[q] = []
+
+        # this gets set every time the log heartbeat last processed helper gets set
+        # in block_loop we check if this value is < x min from now.
+        # If so, we restart, as there's probably something wrong that a restart
+        # can fix.
+        self.internal_freqency_timer = dt.datetime.now().astimezone(tz=dt.timezone.utc)
