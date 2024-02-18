@@ -199,10 +199,12 @@ class ExchangeRates(Utils):
                     token_list = [
                         x["_id"].replace("w", "")
                         for x in self.db[Collections.tokens_tags].find(
-                            {"owner": "Arabella"}
+                            {"token_type": "fungible"}
                         )
                     ]
-                    token_list.insert(0, "CCD")
+                    # token_list.insert(0, "CCD")
+                    # token_list.insert(0, "EUROe")
+
                     queue = []
                     for token in token_list:
                         queue = await self.coingecko_historical(token)
