@@ -159,7 +159,7 @@ class TokenAccounting(Utils):
                     # }
 
                     pipeline = [
-                        {"$match": {"token_metadata": {"$exists": False}}},
+                        {"$match": {"token_metadata": {"$not": {"$ne": None}}}},
                         {
                             "$match": {
                                 "contract": {
