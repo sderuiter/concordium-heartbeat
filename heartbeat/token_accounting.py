@@ -682,7 +682,7 @@ class TokenAccounting(Utils):
         if self.address_to_follow:
             if self.address_to_follow == address:
                 before_value = token_holders.get(address)
-                before_value_str = f"{before_value:,.0f}" if before_value else ""
+                before_value_str = f"{before_value}" if before_value else ""
 
                 if result.tag == 254:
                     after_value = str(
@@ -704,7 +704,7 @@ class TokenAccounting(Utils):
                         )
 
                 console.log(
-                    f"{self.address_to_follow[:4]}] | {before_value_str} | {event} | {result.token_amount:,.0f} | {after_value:,.0f}"
+                    f"{self.address_to_follow[:4]}] | {before_value_str} | {event} | {result.token_amount} | {after_value}"
                 )
 
     def save_mint(
