@@ -489,6 +489,11 @@ class TokenAccounting(Utils):
                 {"_id": "redo_token_addresses"}
             )
             if result:
+                # this is the address we are going to print account statements from during the token accounting
+                # useful to redo a token address and see the impact on this account
+                self.address_to_follow = result.get("address_to_follow")
+
+                # looping over all token addresses we have listed in the helper to redo.
                 for token_address in result["token_addresses"]:
                     request_result = self.db[
                         Collections.tokens_token_addresses_v2
@@ -512,7 +517,10 @@ class TokenAccounting(Utils):
                     [
                         ReplaceOne(
                             {"_id": "redo_token_addresses"},
-                            replacement={"token_addresses": []},
+                            replacement={
+                                "token_addresses": [],
+                                "address_to_follow": result.get("address_to_follow"),
+                            },
                             upsert=True,
                         )
                     ]
@@ -670,6 +678,35 @@ class TokenAccounting(Utils):
 
         return _queue
 
+    def log_address_to_follow(self, result, address, token_holders, event: str):
+        if self.address_to_follow:
+            if self.address_to_follow == address:
+                before_value = token_holders.get(address)
+                before_value_str = f"{before_value:,.0f}" if before_value else ""
+
+            if result.tag == 254:
+                after_value = str(
+                    int(token_holders.get(address, "0")) + result.token_amount
+                )
+            if result.tag == 253:
+                after_value = str(
+                    int(token_holders.get(address, "0")) - result.token_amount
+                )
+
+            if result.tag == 255:
+                if result.to_address == address:
+                    after_value = str(
+                        int(token_holders.get(address, "0")) + result.token_amount
+                    )
+                if result.from_address == address:
+                    after_value = str(
+                        int(token_holders.get(address, "0")) - result.token_amount
+                    )
+
+            console.log(
+                f"{self.address_to_follow[:4]}] | {before_value_str} | {event} | {result.token_amount:,.0f} | {after_value:,.0f}"
+            )
+
     def save_mint(
         self, token_address_as_class: MongoTypeTokenAddress, log: MongoTypeLoggedEvent
     ):
@@ -678,6 +715,9 @@ class TokenAccounting(Utils):
         token_holders: dict[CCD_AccountAddress, str] = (
             token_address_as_class.token_holders
         )
+
+        self.log_address_to_follow(result, result.to_address, token_holders, "Mint")
+
         token_holders[result.to_address] = str(
             int(token_holders.get(result.to_address, "0")) + result.token_amount
         )
@@ -799,6 +839,11 @@ class TokenAccounting(Utils):
                 f"{result.tag}: {token_address_as_class.token_id} | {token_address_as_class} has no field token_holders?"
             )
 
+        self.log_address_to_follow(result, result.to_address, token_holders, "Transfer")
+        self.log_address_to_follow(
+            result, result.from_address, token_holders, "Transfer"
+        )
+
         token_holders[result.to_address] = str(
             int(token_holders.get(result.to_address, "0")) + result.token_amount
         )
@@ -825,6 +870,7 @@ class TokenAccounting(Utils):
         token_holders: dict[CCD_AccountAddress, str] = (
             token_address_as_class.token_holders
         )
+        self.log_address_to_follow(result, result.from_address, token_holders, "Burn")
         try:
             token_holders[result.from_address] = str(
                 int(token_holders.get(result.from_address, "0")) - result.token_amount
