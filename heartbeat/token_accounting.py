@@ -684,28 +684,28 @@ class TokenAccounting(Utils):
                 before_value = token_holders.get(address)
                 before_value_str = f"{before_value:,.0f}" if before_value else ""
 
-            if result.tag == 254:
-                after_value = str(
-                    int(token_holders.get(address, "0")) + result.token_amount
-                )
-            if result.tag == 253:
-                after_value = str(
-                    int(token_holders.get(address, "0")) - result.token_amount
-                )
-
-            if result.tag == 255:
-                if result.to_address == address:
+                if result.tag == 254:
                     after_value = str(
                         int(token_holders.get(address, "0")) + result.token_amount
                     )
-                if result.from_address == address:
+                if result.tag == 253:
                     after_value = str(
                         int(token_holders.get(address, "0")) - result.token_amount
                     )
 
-            console.log(
-                f"{self.address_to_follow[:4]}] | {before_value_str} | {event} | {result.token_amount:,.0f} | {after_value:,.0f}"
-            )
+                if result.tag == 255:
+                    if result.to_address == address:
+                        after_value = str(
+                            int(token_holders.get(address, "0")) + result.token_amount
+                        )
+                    if result.from_address == address:
+                        after_value = str(
+                            int(token_holders.get(address, "0")) - result.token_amount
+                        )
+
+                console.log(
+                    f"{self.address_to_follow[:4]}] | {before_value_str} | {event} | {result.token_amount:,.0f} | {after_value:,.0f}"
+                )
 
     def save_mint(
         self, token_address_as_class: MongoTypeTokenAddress, log: MongoTypeLoggedEvent
