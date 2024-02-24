@@ -704,7 +704,7 @@ class TokenAccounting(Utils):
                         )
 
                 console.log(
-                    f"{self.address_to_follow[:4]}] | {before_value_str} | {event} | {result.token_amount} | {after_value}"
+                    f"Address: {self.address_to_follow[:4]}]\nPosition Before: {before_value_str}\nEvent: {event}\nToken Amount: {result.token_amount}\nPosition After: {after_value}"
                 )
 
     def save_mint(
