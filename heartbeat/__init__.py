@@ -23,6 +23,7 @@ from .block_loop import BlockLoop as _block_loop
 from .pre_renderers import PreRenderers as _pre_renderers
 from .consistency import Consistency as _consistency
 from .utils import Queue
+import aiohttp
 
 urllib3.disable_warnings()
 console = Console()
@@ -72,3 +73,12 @@ class Heartbeat(
         # If so, we restart, as there's probably something wrong that a restart
         # can fix.
         self.internal_freqency_timer = dt.datetime.now().astimezone(tz=dt.timezone.utc)
+        self.session = aiohttp.ClientSession()
+        coin_api_headers = {
+            "X-CoinAPI-Key": COIN_API_KEY,
+        }
+        self.coin_api_session = aiohttp.ClientSession(headers=coin_api_headers)
+
+    def exit(self):
+        self.session.close()
+        self.coin_api_session.close()

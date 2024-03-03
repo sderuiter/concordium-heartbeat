@@ -12,63 +12,43 @@ import dateutil
 
 
 class ExchangeRates(Utils):
-    async def coinapi(self, token):
-        headers = {
-            "X-CoinAPI-Key": COIN_API_KEY,
-        }
-        async with aiohttp.ClientSession(headers=headers) as session:
-            url = f"https://rest.coinapi.io/v1/exchangerate/{token}/USD"
-            async with session.get(url) as resp:
-                if resp.ok:
-                    result = await resp.json()
-                    return_dict = {
-                        "_id": f"USD/{token}",
-                        "token": token,
-                        "timestamp": dateutil.parser.parse(result["time"]),
-                        "rate": result["rate"],
-                        "source": "CoinAPI",
-                    }
-                else:
-                    return_dict = None
+    async def coinapi(self, token, session: aiohttp.ClientSession):
+        url = f"https://rest.coinapi.io/v1/exchangerate/{token}/USD"
+        async with session.get(url) as resp:
+            if resp.ok:
+                result = await resp.json()
+                return_dict = {
+                    "_id": f"USD/{token}",
+                    "token": token,
+                    "timestamp": dateutil.parser.parse(result["time"]),
+                    "rate": result["rate"],
+                    "source": "CoinAPI",
+                }
+            else:
+                return_dict = None
 
         return return_dict
 
     async def coingecko(self, token):
-        # token_translation_dict = {
-        #     "CCD": "concordium",
-        #     "ETH": "ethereum",
-        #     "USDC": "usd-coin",
-        #     "USDT": "tether",
-        #     "BTC": "bitcoin",
-        #     "UNI": "unicorn-token",
-        #     "LINK": "chainlink",
-        #     "MANA": "decentraland",
-        #     "AAVE": "aave",
-        #     "DAI": "dai",
-        #     "BUSD": "binance-usd",
-        #     "VNXAU": "vnx-gold",
-        #     "DOGE": "dogecoin",
-        #     "SHIB": "shiba-inu",
-        # }
         token_to_request = self.coingecko_token_translation.get(token)
         if token_to_request:
-            async with aiohttp.ClientSession() as session:
-                url = f"https://api.coingecko.com/api/v3/simple/price?ids={token_to_request}&vs_currencies=usd&include_last_updated_at=true"
-                async with session.get(url) as resp:
-                    if resp.ok:
-                        result = await resp.json()
-                        result = result[token_to_request]
-                        return_dict = {
-                            "_id": f"USD/{token}",
-                            "token": token,
-                            "timestamp": dt.datetime.fromtimestamp(
-                                result["last_updated_at"], tz=timezone.utc
-                            ),
-                            "rate": result["usd"],
-                            "source": "CoinGecko",
-                        }
-                    else:
-                        return_dict = None
+
+            url = f"https://api.coingecko.com/api/v3/simple/price?ids={token_to_request}&vs_currencies=usd&include_last_updated_at=true"
+            async with self.session.get(url) as resp:
+                if resp.ok:
+                    result = await resp.json()
+                    result = result[token_to_request]
+                    return_dict = {
+                        "_id": f"USD/{token}",
+                        "token": token,
+                        "timestamp": dt.datetime.fromtimestamp(
+                            result["last_updated_at"], tz=timezone.utc
+                        ),
+                        "rate": result["usd"],
+                        "source": "CoinGecko",
+                    }
+                else:
+                    return_dict = None
         else:
             return_dict = None
         return return_dict
@@ -99,8 +79,9 @@ class ExchangeRates(Utils):
                     token_list.insert(0, "CCD")
                     token_list.insert(0, "EUROe")
                     queue = []
+
                     for token in token_list:
-                        result = await self.coinapi(token)
+                        result = await self.coinapi(token, self.coin_api_session)
                         if not result:
                             result = await self.coingecko(token)
                         if result:
@@ -158,12 +139,18 @@ class ExchangeRates(Utils):
         #     "SHIB": "shiba-inu",
         # }
         # token_to_request = token_translation_dict[token]
+        await self.get_token_translations_from_mongo()
         token_to_request = self.coingecko_token_translation.get(token)
+
         return_list_for_token = []
-        async with aiohttp.ClientSession() as session:
+        # only for tokens that we know we can request
+        if token_to_request:
+            await asyncio.sleep(61)
+            self.session: aiohttp.ClientSession
             url = f"https://api.coingecko.com/api/v3/coins/{token_to_request}/market_chart?vs_currency=usd&days=max&interval=daily&precision=full"
-            async with session.get(url) as resp:
+            async with self.session.get(url) as resp:
                 if resp.ok:
+                    print(f"{token} | {token_to_request} | {resp.status}")
                     result = await resp.json()
                     result = result["prices"]
 
@@ -186,6 +173,7 @@ class ExchangeRates(Utils):
                         )
 
                 else:
+                    print(f"{token} | {token_to_request} | {resp.status}")
                     return_dict = None
 
         return return_list_for_token
@@ -207,6 +195,7 @@ class ExchangeRates(Utils):
 
                     queue = []
                     for token in token_list:
+
                         queue = await self.coingecko_historical(token)
 
                         if len(queue) > 0:
