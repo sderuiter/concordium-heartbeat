@@ -752,6 +752,8 @@ class TokenAccounting(Utils):
                 #     )
             if do_request:
                 async with aiohttp.ClientSession(read_timeout=timeout) as session:
+                    if url[:4] == "ipfs":
+                        url = f"https://ipfs.io/ipfs/{url[7:]}"
                     async with session.get(url) as resp:
                         t = await resp.json()
 
