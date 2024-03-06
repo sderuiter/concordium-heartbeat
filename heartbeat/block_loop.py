@@ -32,6 +32,12 @@ class BlockLoop(_block_processing):
         self.existing_source_modules.update(existing_source_modules_no_contracts)
         self.queues[Queue.updated_modules] = []
 
+        result = self.db[Collections.instances].find({})
+        result = list(result)
+        self.existing_instances: dict[str, CCD_ModuleRef] = {
+            x["_id"]: True for x in result
+        }
+
         start = dt.datetime.now()
         while len(block_list) > 0:
             current_block_to_process: CCD_BlockInfo = block_list.pop(0)

@@ -11,6 +11,7 @@ from sharingiscaring.mongodb import (
 from env import *
 from rich.console import Console
 import urllib3
+import atexit
 
 urllib3.disable_warnings()
 
@@ -53,7 +54,7 @@ def main():
     grpcclient = GRPCClient()
 
     heartbeat = Heartbeat(grpcclient, tooter, mongodb, motormongo, RUN_ON_NET)
-
+    atexit.register(heartbeat.exit)
     # these to helper methods are not needed, only things
     # go really wrong...
 

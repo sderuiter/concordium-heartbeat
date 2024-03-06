@@ -4,6 +4,7 @@ from sharingiscaring.mongodb import Collections
 from sharingiscaring.tooter import TooterChannel, TooterType
 
 from pymongo.collection import Collection
+from pymongo.results import BulkWriteResult
 from env import *
 import asyncio
 from rich.console import Console
@@ -19,6 +20,7 @@ class SendToMongo(Utils):
         """
         self.queues: dict[Collections, list]
         self.db: dict[Collections, Collection]
+        self.motordb: dict[Collections, Collection]
         while True:
             try:
                 if len(self.queues[Queue.blocks]) > 0:
@@ -49,20 +51,23 @@ class SendToMongo(Utils):
                     self.queues[Queue.special_events] = []
 
                 if len(self.queues[Queue.transactions]) > 0:
-                    result = self.db[Collections.transactions].bulk_write(
-                        self.queues[Queue.transactions]
-                    )
-                    console.log(
-                        f"T:  {len(self.queues[Queue.transactions]):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
-                    )
+                    tx_queue = self.queues[Queue.transactions]
                     self.queues[Queue.transactions] = []
+                    result: BulkWriteResult = await self.motordb[
+                        Collections.transactions
+                    ].bulk_write(tx_queue)
+                    console.log(
+                        f"T:  {len(tx_queue):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
+                    )
 
                 if len(self.queues[Queue.involved_all]) > 0:
-                    result = self.db[Collections.involved_accounts_all].bulk_write(
-                        self.queues[Queue.involved_all]
-                    )
+                    ia_queue = self.queues[Queue.involved_all]
+                    self.queues[Queue.involved_all] = []
+                    result: BulkWriteResult = await self.motordb[
+                        Collections.involved_accounts_all
+                    ].bulk_write(ia_queue)
                     console.log(
-                        f"A:  {len(self.queues[Queue.involved_all]):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
+                        f"A:  {len(ia_queue):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
                     )
                     self.queues[Queue.involved_all] = []
 
@@ -110,22 +115,24 @@ class SendToMongo(Utils):
                     self.queues[Queue.block_per_day] = []
 
                 if len(self.queues[Queue.logged_events]) > 0:
-                    result = self.db[Collections.tokens_logged_events].bulk_write(
-                        self.queues[Queue.logged_events]
-                    )
-                    console.log(
-                        f"E:  {len(self.queues[Queue.logged_events]):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
-                    )
+                    le_queue = self.queues[Queue.logged_events]
                     self.queues[Queue.logged_events] = []
+                    result: BulkWriteResult = await self.motordb[
+                        Collections.tokens_logged_events
+                    ].bulk_write(le_queue)
+                    console.log(
+                        f"E:  {len(le_queue):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
+                    )
 
                 if len(self.queues[Queue.impacted_addresses]) > 0:
-                    result = self.db[Collections.impacted_addresses].bulk_write(
-                        self.queues[Queue.impacted_addresses]
-                    )
-                    console.log(
-                        f"IA: {len(self.queues[Queue.impacted_addresses]):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
-                    )
+                    ia_queue = self.queues[Queue.impacted_addresses]
                     self.queues[Queue.impacted_addresses] = []
+                    result: BulkWriteResult = await self.motordb[
+                        Collections.impacted_addresses
+                    ].bulk_write(ia_queue)
+                    console.log(
+                        f"IA: {len(ia_queue):5,.0f} | M {result.matched_count:5,.0f} | Mod {result.modified_count:5,.0f} | U {result.upserted_count:5,.0f}"
+                    )
 
                 if len(self.queues[Queue.token_addresses_to_redo_accounting]) > 0:
                     query = {"_id": "redo_token_addresses"}

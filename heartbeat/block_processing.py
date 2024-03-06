@@ -422,14 +422,25 @@ class BlockProcessing(_module_logic, _impacted_addresses):
         self.queues: dict[Collections, list]
         self.db: dict[Collections, Collection]
         self.existing_source_modules: dict[CCD_ModuleRef, set]
+        self.existing_instances: dict[str, CCD_ModuleRef]
         self.grpcclient: GRPCClient
-
+        # decode = 0
+        # extract = 0
+        # classify = 0
+        # index_transfer = 0
+        # smart_c = 0
+        cis_2_contracts = {}
         for tx in transactions:
+            # s = dt.datetime.now()
             (
                 logged_events,
                 token_addresses_to_redo_accounting,
                 provenance_contracts_to_add,
-            ) = self.decode_cis_logged_events(tx, block_info, special_purpose)
+                cis_2_contracts,
+            ) = self.decode_cis_logged_events(
+                tx, block_info, cis_2_contracts, special_purpose
+            )
+            # decode += (dt.datetime.now() - s).total_seconds()
 
             if len(logged_events) > 0:
                 self.queues[Queue.logged_events].extend(logged_events)
@@ -449,12 +460,17 @@ class BlockProcessing(_module_logic, _impacted_addresses):
                 hash=block_info.hash,
                 slot_time=block_info.slot_time,
             )
+            # s = dt.datetime.now()
             self.extract_impacted_addesses_from_tx(tx)
+            # extract += (dt.datetime.now() - s).total_seconds()
 
+            # s = dt.datetime.now()
             result = self.classify_transaction(tx)
+            # classify += (dt.datetime.now() - s).total_seconds()
 
+            # s = dt.datetime.now()
             dct_transfer_and_all = self.index_transfer_and_all(tx, result, block_info)
-
+            # index_transfer += (dt.datetime.now() - s).total_seconds()
             # always store tx in this collection
             self.queues[Queue.involved_all].append(
                 ReplaceOne(
@@ -478,6 +494,7 @@ class BlockProcessing(_module_logic, _impacted_addresses):
                 )
 
             # only store tx in this collection if it contains a smart contract
+            # s = dt.datetime.now()
             if result.contracts_involved:
                 for contract in result.list_of_contracts_involved:
                     index_contract = self.index_contract(
@@ -485,53 +502,65 @@ class BlockProcessing(_module_logic, _impacted_addresses):
                     )
 
                     try:
-                        instance_info = self.grpcclient.get_instance_info(
-                            index_contract["index"],
-                            index_contract["subindex"],
-                            block_info.hash,
-                            NET(self.net),
-                        )
-                        instance_info: dict = instance_info.model_dump(
-                            exclude_none=True
-                        )
-
-                        instance_info.update({"_id": index_contract["contract"]})
-                        if instance_info["v0"]["source_module"] == "":
-                            del instance_info["v0"]
-                            _source_module = instance_info["v1"]["source_module"]
-                        if instance_info["v1"]["source_module"] == "":
-                            del instance_info["v1"]
-                            _source_module = instance_info["v0"]["source_module"]
-
-                        self.queues[Queue.instances].append(
-                            ReplaceOne(
-                                {"_id": index_contract["contract"]},
-                                instance_info,
-                                upsert=True,
+                        if index_contract["contract"] not in self.existing_instances:
+                            instance_info = self.grpcclient.get_instance_info(
+                                index_contract["index"],
+                                index_contract["subindex"],
+                                block_info.hash,
+                                NET(self.net),
                             )
-                        )
-
-                        if _source_module not in self.existing_source_modules.keys():
-                            self.existing_source_modules[_source_module] = set()
-
-                        self.existing_source_modules[_source_module].add(
-                            index_contract["contract"]
-                        )
-                        self.queues[Queue.updated_modules].append(_source_module)
-
-                        index_contract.update({"source_module": _source_module})
-
-                        self.queues[Queue.involved_contract].append(
-                            ReplaceOne(
-                                {"_id": index_contract["_id"]},
-                                index_contract,
-                                upsert=True,
+                            instance_info: dict = instance_info.model_dump(
+                                exclude_none=True
                             )
-                        )
+
+                            instance_info.update({"_id": index_contract["contract"]})
+                            if instance_info["v0"]["source_module"] == "":
+                                del instance_info["v0"]
+                                _source_module = instance_info["v1"]["source_module"]
+                            if instance_info["v1"]["source_module"] == "":
+                                del instance_info["v1"]
+                                _source_module = instance_info["v0"]["source_module"]
+
+                            self.queues[Queue.instances].append(
+                                ReplaceOne(
+                                    {"_id": index_contract["contract"]},
+                                    instance_info,
+                                    upsert=True,
+                                )
+                            )
+
+                            if (
+                                _source_module
+                                not in self.existing_source_modules.keys()
+                            ):
+                                self.existing_source_modules[_source_module] = set()
+
+                            self.existing_source_modules[_source_module].add(
+                                index_contract["contract"]
+                            )
+                            self.queues[Queue.updated_modules].append(_source_module)
+
+                            index_contract.update({"source_module": _source_module})
+
+                            self.queues[Queue.involved_contract].append(
+                                ReplaceOne(
+                                    {"_id": index_contract["_id"]},
+                                    index_contract,
+                                    upsert=True,
+                                )
+                            )
                     except:
                         console.log(
                             f"block or instance not found for {index_contract}..."
                         )
+
+        #     smart_c += (dt.datetime.now() - s).total_seconds()
+
+        # console.log(f"{decode=:,.4} s")
+        # console.log(f"{extract=:,.4} s")
+        # console.log(f"{classify=:,.4} s")
+        # console.log(f"{index_transfer=:,.4} s")
+        # console.log(f"{smart_c=:,.4} s")
 
     def add_block_and_txs_to_queue(
         self, block_info: CCD_BlockInfo, special_purpose: bool = False
@@ -550,6 +579,7 @@ class BlockProcessing(_module_logic, _impacted_addresses):
 
         if block_info.transaction_count > 0:
             # console.log(block_info.height)
+            # s = dt.datetime.now()
             block: CCD_Block = self.grpcclient.get_block_transaction_events(
                 block_info.hash, NET(self.net)
             )
@@ -575,11 +605,16 @@ class BlockProcessing(_module_logic, _impacted_addresses):
                     ReplaceOne({"_id": tx.hash}, replacement=json_tx, upsert=True)
                 )
                 # self.lookout_for_account_transaction(block_info, tx)
-
+            # console.log(
+            #     f"get_block_transaction_events: {(dt.datetime.now()-s).total_seconds():,.4} s for {block_info.transaction_count} txs."
+            # )
+            # s = dt.datetime.now()
             self.generate_indices_based_on_transactions(
                 block.transaction_summaries, block_info, special_purpose
             )
-
+            # console.log(
+            #     f"generate_indices_based_on_transactions: {(dt.datetime.now()-s).total_seconds():,.4} s for {block_info.transaction_count} txs."
+            # )
         self.queues[Queue.blocks].append(
             ReplaceOne(
                 {"_id": block_info.hash}, replacement=json_block_info, upsert=True

@@ -148,6 +148,7 @@ class Utils:
         self,
         tx: CCD_BlockItemSummary,
         block_info: CCD_BlockInfo,
+        cis_2_contracts: dict[bool],
         special_purpose: bool = False,
     ):
         """
@@ -180,10 +181,16 @@ class Utils:
             instance_address = f"<{contract_index},{contract_subindex}>"
             entrypoint = f"{tx.account_transaction.effects.contract_initialized.init_name[5:]}.supports"
             cis = self.init_cis(contract_index, contract_subindex, entrypoint)
-            supports_cis_1_2 = cis.supports_standards(
-                [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
-            )
+            if contract_index not in cis_2_contracts:
+                supports_cis_1_2 = cis.supports_standards(
+                    [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
+                )
+                cis_2_contracts[contract_index] = supports_cis_1_2
+            else:
+                supports_cis_1_2 = cis_2_contracts[contract_index]
+
             if supports_cis_1_2:
+
                 for index, event in enumerate(
                     tx.account_transaction.effects.contract_initialized.events
                 ):
@@ -233,12 +240,14 @@ class Utils:
                         cis = self.init_cis(
                             contract_index, contract_subindex, entrypoint
                         )
-                        supports_cis_1_2 = cis.supports_standards(
-                            [
-                                StandardIdentifiers.CIS_1,
-                                StandardIdentifiers.CIS_2,
-                            ]
-                        )
+                        if contract_index not in cis_2_contracts:
+                            supports_cis_1_2 = cis.supports_standards(
+                                [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
+                            )
+                            cis_2_contracts[contract_index] = supports_cis_1_2
+                        else:
+                            supports_cis_1_2 = cis_2_contracts[contract_index]
+
                         if supports_cis_1_2:
                             for index, event in enumerate(effect.interrupted.events):
                                 ordering += 1
@@ -282,9 +291,13 @@ class Utils:
                         entrypoint,
                         NET(self.net),
                     )
-                    supports_cis_1_2 = cis.supports_standards(
-                        [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
-                    )
+                    if contract_index not in cis_2_contracts:
+                        supports_cis_1_2 = cis.supports_standards(
+                            [StandardIdentifiers.CIS_1, StandardIdentifiers.CIS_2]
+                        )
+                        cis_2_contracts[contract_index] = supports_cis_1_2
+                    else:
+                        supports_cis_1_2 = cis_2_contracts[contract_index]
                     if supports_cis_1_2:
                         for index, event in enumerate(effect.updated.events):
                             ordering += 1
@@ -320,6 +333,7 @@ class Utils:
             logged_events,
             token_addresses_to_redo_accounting,
             provenance_contracts_to_add,
+            cis_2_contracts,
         )
 
     async def update_impacted_addresses_all_top_list(self):
