@@ -169,6 +169,7 @@ class Utils:
                 logged_events,
                 token_addresses_to_redo_accounting,
                 provenance_contracts_to_add,
+                cis_2_contracts,
             )
 
         if tx.account_transaction.effects.contract_initialized:
