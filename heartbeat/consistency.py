@@ -77,7 +77,7 @@ class Consistency(Utils):
                         channel=TooterChannel.NOTIFIER,
                         title="",
                         chat_id=913126895,
-                        body=f"Heartbeat on {self.net} missed {len(missing_blocks):,.0f} blocks. {'Added as special request.' if len(missing_blocks) > 0 else ''}",
+                        body=f"Heartbeat: Heartbeat on {self.net} missed {len(missing_blocks):,.0f} blocks. {'Added as special request.' if len(missing_blocks) > 0 else ''}\n{' '.join([x for x in missing_blocks])}",
                         notifier_type=TooterType.INFO,
                     )
             except Exception as e:
