@@ -5,3 +5,5 @@ asyncio
 grpcio-tools
 betterproto==2.0.0b5
 chardet
+pytest
+python-dotenv
