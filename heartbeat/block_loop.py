@@ -56,7 +56,12 @@ class BlockLoop(_block_processing):
                     )
                     if result:
                         heights: list = result["heights"]
-                        heights.remove(current_block_to_process.height)
+                        try:
+                            heights.remove(current_block_to_process.height)
+                        except ValueError:
+                            console.log(
+                                f" Tried 'heights.remove(current_block_to_process.height)' for {current_block_to_process.height:,.0f} but failed."
+                            )
                         result.update({"heights": heights})
                     _ = self.db[Collections.helpers].bulk_write(
                         [
