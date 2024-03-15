@@ -4,9 +4,9 @@ from rich.progress import track
 from bson.objectid import ObjectId
 
 
-from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.tooter import Tooter
-from sharingiscaring.mongodb import (
+from ccdefundamentals.GRPCClient.CCD_Types import *
+from ccdefundamentals.tooter import Tooter
+from ccdefundamentals.mongodb import (
     MongoDB,
     Collections,
     MongoMotor,

@@ -3,11 +3,11 @@ from .utils import Queue
 from .module_logic import ModuleLogic as _module_logic
 from .impacted_addresses import ImpactedAddresses as _impacted_addresses
 from rich.progress import track
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.tooter import TooterChannel, TooterType
-from sharingiscaring.mongodb import Collections
-from sharingiscaring.enums import NET
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.GRPCClient.CCD_Types import *
+from ccdefundamentals.tooter import TooterChannel, TooterType
+from ccdefundamentals.mongodb import Collections
+from ccdefundamentals.enums import NET
 from pymongo import ReplaceOne
 from pymongo.collection import Collection
 from env import *

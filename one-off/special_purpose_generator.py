@@ -1,6 +1,6 @@
-from sharingiscaring.mongodb import MongoDB, Collections
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.tooter import Tooter
+from ccdefundamentals.mongodb import MongoDB, Collections
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.tooter import Tooter
 from pymongo import ASCENDING, DESCENDING, ReplaceOne
 from env import *
 

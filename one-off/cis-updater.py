@@ -1,13 +1,13 @@
-from sharingiscaring.mongodb import (
+from ccdefundamentals.mongodb import (
     MongoDB,
     Collections,
     MongoTypeModule,
     MongoTypeInstance,
 )
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.cis import CIS, StandardIdentifiers
-from sharingiscaring.enums import NET
-from sharingiscaring.tooter import Tooter
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.cis import CIS, StandardIdentifiers
+from ccdefundamentals.enums import NET
+from ccdefundamentals.tooter import Tooter
 from pymongo import ASCENDING, DESCENDING, ReplaceOne
 from env import *
 

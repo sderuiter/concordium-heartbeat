@@ -1,11 +1,11 @@
-from sharingiscaring.mongodb import MongoDB, Collections
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.tooter import Tooter
+from ccdefundamentals.mongodb import MongoDB, Collections
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.tooter import Tooter
 from pymongo import ASCENDING, DESCENDING, ReplaceOne
 from env import *
 import datetime as dt
 from datetime import timedelta
-from sharingiscaring.GRPCClient.CCD_Types import CCD_BlockItemSummary
+from ccdefundamentals.GRPCClient.CCD_Types import CCD_BlockItemSummary
 
 
 tooter: Tooter = Tooter(

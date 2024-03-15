@@ -1,10 +1,10 @@
 # ruff: noqa: F403, F405, E402, E501, E722
 import asyncio
 from heartbeat import Heartbeat
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.tooter import Tooter
-from sharingiscaring.mongodb import (
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.GRPCClient.CCD_Types import *
+from ccdefundamentals.tooter import Tooter
+from ccdefundamentals.mongodb import (
     MongoDB,
     MongoMotor,
 )
@@ -16,23 +16,11 @@ import atexit
 urllib3.disable_warnings()
 
 console = Console()
+grpcclient = GRPCClient()
+tooter = Tooter()
 
-tooter: Tooter = Tooter(
-    ENVIRONMENT, BRANCH, NOTIFIER_API_TOKEN, API_TOKEN, FASTMAIL_TOKEN
-)
-mongodb = MongoDB(
-    {
-        "MONGODB_PASSWORD": MONGODB_PASSWORD,
-    },
-    tooter,
-)
-
-motormongo = MongoMotor(
-    {
-        "MONGODB_PASSWORD": MONGODB_PASSWORD,
-    },
-    tooter,
-)
+mongodb = MongoDB(tooter)
+motormongo = MongoMotor(tooter)
 
 
 def main():

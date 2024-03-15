@@ -1,14 +1,14 @@
-from sharingiscaring.mongodb import (
+from ccdefundamentals.mongodb import (
     MongoDB,
     Collections,
     MongoTypeModule,
     MongoTypeInstance,
     MongoTypeInvolvedContract,
 )
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.GRPCClient.CCD_Types import *
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.GRPCClient.CCD_Types import *
 
-from sharingiscaring.cis import (
+from ccdefundamentals.cis import (
     CIS,
     StandardIdentifiers,
     mintEvent,
@@ -22,12 +22,12 @@ from sharingiscaring.cis import (
     MongoTypeTokenHolderAddress,
     MongoTypeTokenForAddress,
 )
-from sharingiscaring.enums import NET
-from sharingiscaring.tooter import Tooter
+from ccdefundamentals.enums import NET
+from ccdefundamentals.tooter import Tooter
 from pymongo import ASCENDING, DESCENDING, ReplaceOne
 from pymongo.collection import Collection
 from pymongo.database import Database
-from sharingiscaring.GRPCClient.CCD_Types import *
+from ccdefundamentals.GRPCClient.CCD_Types import *
 from rich import print
 from env import *
 from rich.console import Console

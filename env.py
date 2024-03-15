@@ -1,69 +1,24 @@
 import os
+import ast
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
-def exists(path):
-    """Test whether a path exists.  Returns False for broken symbolic links"""
-    try:
-        os.stat(path)
-    except (OSError, ValueError):
-        return False
-    return True
-
-
-file_exists = exists("envdonotcommit.py")
-if file_exists:
-    from envdonotcommit import (
-        MONGODB_PASSWORD_LOCAL,
-        API_TOKEN_LOCAL,
-        MONGO_IP_LOCAL,
-        MONGO_PORT_LOCAL,
-        NOTIFIER_API_TOKEN_LOCAL,
-        FASTMAIL_TOKEN_LOCAL,
-        REQUESTOR_NODES_LOCAL,
-        TESTNET_IP_LOCAL,
-        MAINNET_IP_LOCAL,
-        TESTNET_PORT_LOCAL,
-        MAINNET_PORT_LOCAL,
-        NET_LOCAL,
-        COIN_API_KEY_LOCAL,
-    )
-
-else:
-    MONGODB_PASSWORD_LOCAL = None
-    API_TOKEN_LOCAL = None
-    MONGO_IP_LOCAL = None
-    MONGO_PORT_LOCAL = None
-    NOTIFIER_API_TOKEN_LOCAL = None
-    FASTMAIL_TOKEN_LOCAL = None
-    REQUESTOR_NODES_LOCAL = None
-    TESTNET_IP_LOCAL = None
-    MAINNET_IP_LOCAL = None
-    TESTNET_PORT_LOCAL = None
-    MAINNET_PORT_LOCAL = None
-    NET_LOCAL = None
-    COIN_API_KEY_LOCAL = None
-
-
-API_TOKEN = os.environ.get("API_TOKEN", API_TOKEN_LOCAL)
-ENVIRONMENT = "dev" if API_TOKEN == API_TOKEN_LOCAL else "prod"
-ON_SERVER = os.environ.get("ON_SERVER", False)
 BRANCH = os.environ.get("BRANCH", "dev")
-MONGO_IP = os.environ.get("MONGO_IP", MONGO_IP_LOCAL)
-MONGO_PORT = os.environ.get("MONGO_PORT", MONGO_PORT_LOCAL)
-MONGODB_PASSWORD = os.environ.get("MONGODB_PASSWORD", MONGODB_PASSWORD_LOCAL)
-NOTIFIER_API_TOKEN = os.environ.get("NOTIFIER_API_TOKEN", NOTIFIER_API_TOKEN_LOCAL)
-FASTMAIL_TOKEN = os.environ.get("FASTMAIL_TOKEN", FASTMAIL_TOKEN_LOCAL)
-REQUESTOR_NODES = os.environ.get("REQUESTOR_NODES", REQUESTOR_NODES_LOCAL)
-REQUESTOR_NODES = REQUESTOR_NODES.split(",")
-COIN_API_KEY = os.environ.get("COIN_API_KEY", COIN_API_KEY_LOCAL)
-TESTNET_IP = os.environ.get("TESTNET_IP", TESTNET_IP_LOCAL)
-MAINNET_IP = os.environ.get("MAINNET_IP", MAINNET_IP_LOCAL)
-DEBUG = os.environ.get("DEBUG", False)
-
-TESTNET_PORT = os.environ.get("TESTNET_PORT", TESTNET_PORT_LOCAL)
-MAINNET_PORT = os.environ.get("MAINNET_PORT", MAINNET_PORT_LOCAL)
-
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "prod")
+NOTIFIER_API_TOKEN = os.environ.get("NOTIFIER_API_TOKEN")
+API_TOKEN = os.environ.get("API_TOKEN")
+FASTMAIL_TOKEN = os.environ.get("FASTMAIL_TOKEN")
+FALLBACK_URI = os.environ.get("FALLBACK_URI")
+MONGO_URI = os.environ.get("MONGO_URI")
+ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID")
+MAILTO_LINK = os.environ.get("MAILTO_LINK")
+MAILTO_USER = os.environ.get("MAILTO_USER")
+GRPC_MAINNET = ast.literal_eval(os.environ["GRPC_MAINNET"])
+GRPC_TESTNET = ast.literal_eval(os.environ["GRPC_TESTNET"])
+COIN_API_KEY = os.environ.get("COIN_API_KEY")
+DEBUG = False if os.environ.get("DEBUG", False) == "False" else True
 MAX_BLOCKS_PER_RUN = int(os.environ.get("MAX_BLOCKS_PER_RUN", 100))
 
-RUN_ON_NET = os.environ.get("NET", NET_LOCAL)
-# TESTNET = False if NET == "MAINNET" else True
+RUN_ON_NET = os.environ.get("NET", "testnet")

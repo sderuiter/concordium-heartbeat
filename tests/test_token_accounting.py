@@ -4,15 +4,15 @@ from rich import print
 from heartbeat import Heartbeat
 from pymongo import ASCENDING
 from envdonotcommit import MONGODB_PASSWORD_LOCAL
-from sharingiscaring.mongodb import (
+from ccdefundamentals.mongodb import (
     MongoDB,
     MongoMotor,
     Collections,
 )
-from sharingiscaring.tooter import Tooter
-from sharingiscaring.GRPCClient import GRPCClient
+from ccdefundamentals.tooter import Tooter
+from ccdefundamentals.GRPCClient import GRPCClient
 from rich import print
-from sharingiscaring.cis import (
+from ccdefundamentals.cis import (
     MongoTypeTokenAddress,
     TokenMetaData,
     MongoTypeLoggedEvent,

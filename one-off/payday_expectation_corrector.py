@@ -1,15 +1,15 @@
 # ruff: noqa: F403, F405, E402, E501, E722
-from sharingiscaring.mongodb import (
+from ccdefundamentals.mongodb import (
     MongoDB,
     MongoMotor,
     Collections,
     MongoTypePaydaysPerformance,
 )
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.tooter import Tooter, TooterChannel, TooterType
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.tooter import Tooter, TooterChannel, TooterType
 from pymongo import ASCENDING, DESCENDING, ReplaceOne, DeleteOne
-from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.cis import MongoTypeTokenAddress
+from ccdefundamentals.GRPCClient.CCD_Types import *
+from ccdefundamentals.cis import MongoTypeTokenAddress
 import datetime as dt
 from env import *
 from rich import print

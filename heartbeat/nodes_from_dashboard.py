@@ -1,7 +1,7 @@
 from .utils import Utils
-from sharingiscaring.mongodb import Collections
-from sharingiscaring.node import ConcordiumNodeFromDashboard
-from sharingiscaring.tooter import TooterChannel, TooterType
+from ccdefundamentals.mongodb import Collections
+from ccdefundamentals.node import ConcordiumNodeFromDashboard
+from ccdefundamentals.tooter import TooterChannel, TooterType
 from pymongo import ReplaceOne
 from pymongo.collection import Collection
 import aiohttp

@@ -1,12 +1,12 @@
 # ruff: noqa: F403, F405, E402, E501, E722
 from .utils import Utils, Queue
-from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.enums import NET
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.mongodb import Collections
+from ccdefundamentals.GRPCClient.CCD_Types import *
+from ccdefundamentals.enums import NET
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.mongodb import Collections
 from pymongo import ReplaceOne
 from env import *
-import sharingiscaring.GRPCClient.wadze as wadze
+import ccdefundamentals.GRPCClient.wadze as wadze
 import io
 from rich.console import Console
 
@@ -67,13 +67,15 @@ class ModuleLogic(Utils):
             results = {"module_name": "", "methods": []}
         module = {
             "_id": module_ref,
-            "module_name": results["module_name"]
-            if "module_name" in results.keys()
-            else None,
+            "module_name": (
+                results["module_name"] if "module_name" in results.keys() else None
+            ),
             "methods": results["methods"] if "methods" in results.keys() else None,
-            "contracts": list(self.existing_source_modules.get(module_ref, []))
-            if self.existing_source_modules.get(module_ref)
-            else None,
+            "contracts": (
+                list(self.existing_source_modules.get(module_ref, []))
+                if self.existing_source_modules.get(module_ref)
+                else None
+            ),
         }
         self.queues[Queue.modules].append(
             ReplaceOne({"_id": module_ref}, module, upsert=True)

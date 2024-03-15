@@ -1,13 +1,13 @@
 # ruff: noqa: F403, F405, E402, E501, E722
 from enum import Enum
-from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.mongodb import Collections, MongoTypeInstance
-from sharingiscaring.cis import CIS, StandardIdentifiers
-from sharingiscaring.tooter import TooterChannel, TooterType
-from sharingiscaring.enums import NET
+from ccdefundamentals.GRPCClient.CCD_Types import *
+from ccdefundamentals.mongodb import Collections, MongoTypeInstance
+from ccdefundamentals.cis import CIS, StandardIdentifiers
+from ccdefundamentals.tooter import TooterChannel, TooterType
+from ccdefundamentals.enums import NET
 from pymongo import ReplaceOne
 import io
-import operator
+
 import asyncio
 import chardet
 

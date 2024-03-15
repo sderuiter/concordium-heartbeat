@@ -1,13 +1,13 @@
-from sharingiscaring.mongodb import MongoDB, MongoMotor, Collections
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.tooter import Tooter
+from ccdefundamentals.mongodb import MongoDB, MongoMotor, Collections
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.tooter import Tooter
 from pymongo import ASCENDING, DESCENDING, ReplaceOne
 import pymongo
 from env import *
 from rich import print
 from rich.progress import track
-from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.cis import (
+from ccdefundamentals.GRPCClient.CCD_Types import *
+from ccdefundamentals.cis import (
     CIS,
     StandardIdentifiers,
     MongoTypeTokenAddress,

@@ -1,7 +1,7 @@
 # ruff: noqa: F403, F405, E402, E501, E722
 from .utils import Utils, Queue
-from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.mongodb import (
+from ccdefundamentals.GRPCClient.CCD_Types import *
+from ccdefundamentals.mongodb import (
     Collections,
     MongoImpactedAddress,
     AccountStatementEntryType,

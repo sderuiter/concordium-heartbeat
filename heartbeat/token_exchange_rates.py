@@ -1,7 +1,7 @@
 # ruff: noqa: F403, F405, E402, E501, E722
 from .utils import Utils
-from sharingiscaring.mongodb import MongoDB, Collections, CollectionsUtilities
-from sharingiscaring.tooter import TooterChannel, TooterType
+from ccdefundamentals.mongodb import MongoDB, Collections, CollectionsUtilities
+from ccdefundamentals.tooter import TooterChannel, TooterType
 from pymongo import ReplaceOne
 from env import *
 import aiohttp

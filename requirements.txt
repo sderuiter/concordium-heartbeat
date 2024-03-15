@@ -1,4 +1,5 @@
-sharingiscaring
+ccdefundamentals
+python-dotenv
 grpcio
 aiohttp
 asyncio

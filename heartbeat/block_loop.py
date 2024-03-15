@@ -1,12 +1,12 @@
 # ruff: noqa: F403, F405, E402, E501, E722
 from .utils import Queue
 from .block_processing import BlockProcessing as _block_processing
-from sharingiscaring.tooter import TooterChannel, TooterType
-from sharingiscaring.mongodb import Collections
-from sharingiscaring.GRPCClient.CCD_Types import *
+from ccdefundamentals.tooter import TooterChannel, TooterType
+from ccdefundamentals.mongodb import Collections
+from ccdefundamentals.GRPCClient.CCD_Types import *
 from pymongo import ReplaceOne
 from pymongo.collection import Collection
-from sharingiscaring.enums import NET
+from ccdefundamentals.enums import NET
 from env import *
 import datetime as dt
 from copy import copy

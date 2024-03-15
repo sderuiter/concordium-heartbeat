@@ -1,8 +1,8 @@
 # ruff: noqa: F403, F405, E402, E501, E722
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.tooter import Tooter
-from sharingiscaring.mongodb import (
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.GRPCClient.CCD_Types import *
+from ccdefundamentals.tooter import Tooter
+from ccdefundamentals.mongodb import (
     MongoDB,
     Collections,
     MongoMotor,

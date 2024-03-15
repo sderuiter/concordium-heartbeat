@@ -1,14 +1,14 @@
-from sharingiscaring.mongodb import MongoDB, MongoMotor, Collections
-from sharingiscaring.GRPCClient import GRPCClient
-from sharingiscaring.tooter import Tooter, TooterChannel, TooterType
+from ccdefundamentals.mongodb import MongoDB, MongoMotor, Collections
+from ccdefundamentals.GRPCClient import GRPCClient
+from ccdefundamentals.tooter import Tooter, TooterChannel, TooterType
 from pymongo import ASCENDING, DESCENDING, ReplaceOne, DeleteOne
-from sharingiscaring.GRPCClient.CCD_Types import *
-from sharingiscaring.cis import MongoTypeTokenAddress
+from ccdefundamentals.GRPCClient.CCD_Types import *
+from ccdefundamentals.cis import MongoTypeTokenAddress
 import datetime as dt
 from env import *
 import json
 
-from sharingiscaring.cis import (
+from ccdefundamentals.cis import (
     MongoTypeTokenAddress,
     TokenMetaData,
     MongoTypeLoggedEvent,
