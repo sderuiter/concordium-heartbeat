@@ -30,7 +30,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: sderuiter/concordium-heartbeat
+          images: ccdexplorer/ccdexplorer-heartbeat
           tags: |
               type=ref,event=branch
               
